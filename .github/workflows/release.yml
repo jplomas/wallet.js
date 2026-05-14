@@ -143,14 +143,14 @@ jobs:
           find src -name "*.js" -type f | sort | xargs sha256sum >> dist/source-checksums-sha256.txt
 
       - name: Generate SBOM (SPDX)
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.9.0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
           format: spdx-json
           output-file: dist/sbom-spdx.json
           artifact-name: sbom-spdx.json
 
       - name: Generate SBOM (CycloneDX)
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.9.0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
           format: cyclonedx-json
           output-file: dist/sbom-cyclonedx.json
