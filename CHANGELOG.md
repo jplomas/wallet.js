@@ -1,3 +1,9 @@
+## [5.1.0](https://github.com/theQRL/wallet.js/compare/v5.0.0...v5.1.0) (2026-05-19)
+
+### Features
+
+* hedged signing / MLDSA dep bump ([29e6214](https://github.com/theQRL/wallet.js/commit/29e621485fa025eb443bf79ba29dac157cbaa5b4))
+
 ## [5.0.0](https://github.com/theQRL/wallet.js/compare/v4.0.0...v5.0.0) (2026-04-23)
 
 ### ⚠ BREAKING CHANGES
