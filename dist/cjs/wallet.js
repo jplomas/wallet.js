@@ -1426,6 +1426,12 @@ function packSig(sigP, ctilde, z, h) {
   for (let i = 0; i < K; ++i) {
     for (let j = 0; j < N; ++j) {
       if (h.vec[i].coeffs[j] !== 0) {
+        if (h.vec[i].coeffs[j] !== 1) {
+          throw new Error('hint coefficients must be binary (0 or 1)');
+        }
+        if (k >= OMEGA) {
+          throw new Error(`hint count exceeds OMEGA (${OMEGA})`);
+        }
         sig[sigOffset + k++] = j;
       }
     }
@@ -1710,11 +1716,31 @@ function cryptoSignKeypair(passedSeed, pk, sk) {
  * Uses the ML-DSA-87 (FIPS 204) signing algorithm with rejection sampling.
  * The context parameter provides domain separation as required by FIPS 204.
  *
+ * # Signing-mode recommendation (TOB-QRLLIB-6)
+ *
+ * **Hedged signing (`randomizedSigning = true`) is the recommended mode**
+ * per FIPS 204 §3.4: the per-signature nonce mixes fresh `crypto.getRandomValues`
+ * randomness, which frustrates the fault-injection attack class against
+ * deterministic signing where an adversary who can flip a single bit during
+ * the `z` computation can differentiate two same-message signatures and
+ * recover `s1`/`s2` by lattice differential analysis. Verification is
+ * unchanged — hedged and deterministic signatures verify under the same
+ * public key.
+ *
+ * **Use deterministic signing (`randomizedSigning = false`) only when the
+ * deterministic property is itself a security or protocol requirement** —
+ * e.g. RANDAO-style verifiable beacon contributions where each validator
+ * must produce the same signature for the same input, or test-vector
+ * reproduction. Consider the [cryptoSignDeterministic] convenience wrapper
+ * for those cases.
+ *
  * @param {Uint8Array} sig - Output buffer for signature (must be at least CryptoBytes = 4627 bytes)
  * @param {string|Uint8Array} m - Message to sign (hex string, optional 0x prefix, or Uint8Array)
  * @param {Uint8Array} sk - Secret key (must be CryptoSecretKeyBytes = 4896 bytes)
- * @param {boolean} randomizedSigning - If true, use random nonce for hedged signing.
- *   If false, use deterministic nonce derived from message and key.
+ * @param {boolean} randomizedSigning - **Recommended: `true` (hedged, FIPS 204 §3.4).**
+ *   If true, mix fresh `crypto.getRandomValues` randomness into the
+ *   per-signature nonce. If false, use a deterministic nonce derived from
+ *   message and key (FIPS 204 §3.5).
  * @param {Uint8Array} ctx - Context string for domain separation (required, max 255 bytes).
  *   Pass an empty Uint8Array for no context.
  * @returns {number} 0 on success
@@ -1742,6 +1768,9 @@ function cryptoSignSignature(sig, m, sk, randomizedSigning, ctx) {
     throw new TypeError('ctx is required and must be a Uint8Array');
   }
   if (ctx.length > 255) throw new Error(`invalid context length: ${ctx.length} (max 255)`);
+  if (typeof randomizedSigning !== 'boolean') {
+    throw new TypeError('randomizedSigning must be a boolean');
+  }
   if (sk.length !== CryptoSecretKeyBytes) {
     throw new Error(`invalid sk length ${sk.length} | Expected length ${CryptoSecretKeyBytes}`);
   }
@@ -1781,6 +1810,7 @@ function cryptoSignSignature(sig, m, sk, randomizedSigning, ctx) {
     // rhoPrime = SHAKE256(key || rnd || mu)
     const rnd = randomizedSigning ? randomBytes$1(RNDBytes) : new Uint8Array(RNDBytes);
     rhoPrime = shake256.create({}).update(key).update(rnd).update(mu).xof(CRHBytes);
+    zeroize(rnd);
 
     polyVecMatrixExpand(mat, rho);
     polyVecLNTT(s1);
@@ -7025,14 +7055,39 @@ function isBytes(input) {
 
 /**
  * Sign a message.
+ *
+ * Signing mode (TOB-QRLLIB-6 — port from the `go-qrllib` Trail of Bits
+ * engagement). The `randomized` flag selects between FIPS 204 §3.4
+ * (hedged) and §3.5 (deterministic) ML-DSA signing:
+ *
+ * - `randomized: true` — **hedged, recommended.** Per FIPS 204 §3.4 the
+ *   per-signature nonce is mixed with fresh randomness from the system
+ *   RNG on every call. Two signs over the same `(sk, ctx, message)`
+ *   produce **distinct** signature bytes; both verify under the same
+ *   public key. Hedged signing frustrates the fault-injection attack
+ *   class against deterministic ML-DSA where an adversary who can flip
+ *   a single bit during the `z` computation can differentiate two
+ *   signatures of the same message and recover `s1`/`s2` by lattice
+ *   differential analysis. This is the wallet's default.
+ *
+ * - `randomized: false` — **deterministic, opt-in.** Use only when the
+ *   deterministic property is itself a security or protocol requirement
+ *   — e.g. RANDAO-style verifiable beacon contributions where every
+ *   validator must produce the same signature for the same input, or
+ *   KAT / ACVP vector reproduction. Prefer the `signDeterministic`
+ *   helper to signal intent at the call site rather than passing a
+ *   positional boolean.
+ *
  * @param {Uint8Array} sk - Secret key (must be CryptoSecretKeyBytes bytes)
  * @param {Uint8Array} message - Message to sign
  * @param {Uint8Array} ctx - FIPS 204 context bytes (wallet layer passes the
  *   domain-separated `"ZOND" || version || descriptor` context)
+ * @param {boolean} [randomized=true] - `true` for hedged (recommended),
+ *   `false` for deterministic.
  * @returns {Uint8Array} signature
  * @throws {Error} If sk, message, or ctx is invalid
  */
-function sign(sk, message, ctx) {
+function sign(sk, message, ctx, randomized = true) {
   if (!isBytes(sk)) {
     throw new Error('sk must be Uint8Array or Buffer');
   }
@@ -7045,10 +7100,30 @@ function sign(sk, message, ctx) {
   if (!isBytes(ctx)) {
     throw new Error('ctx must be Uint8Array or Buffer');
   }
+  if (typeof randomized !== 'boolean') {
+    throw new Error('randomized must be a boolean');
+  }
 
-  const sm = cryptoSign(message, sk, false, ctx);
+  const sm = cryptoSign(message, sk, randomized, ctx);
   const signature = sm.slice(0, CryptoBytes);
   return signature;
+}
+
+/**
+ * Deterministic signing helper. Thin wrapper around {@link sign} with
+ * `randomized: false` that signals caller intent at the API surface
+ * rather than via a positional boolean. Use only when determinism is
+ * itself a protocol requirement (see {@link sign} JSDoc). For all
+ * other cases prefer {@link sign}, which defaults to hedged signing
+ * per FIPS 204 §3.4 and TOB-QRLLIB-6.
+ *
+ * @param {Uint8Array} sk - Secret key
+ * @param {Uint8Array} message - Message to sign
+ * @param {Uint8Array} ctx - FIPS 204 context bytes
+ * @returns {Uint8Array} signature
+ */
+function signDeterministic(sk, message, ctx) {
+  return sign(sk, message, ctx, false);
 }
 
 /**
@@ -7258,12 +7333,35 @@ class Wallet {
    * Sign a message. The wallet binds the signature to its descriptor via
    * the domain-separated signing context; callers do not need to pass it
    * explicitly.
+   *
+   * Signing is **hedged** by default (FIPS 204 §3.4, recommended per
+   * TOB-QRLLIB-6) — two signs over the same `(wallet, message)` pair
+   * produce distinct signature bytes that both verify under the same
+   * public key. For protocols that require deterministic signatures
+   * (RANDAO-style verifiable beacon contributions, KAT / ACVP vector
+   * reproduction), use {@link Wallet#signDeterministic} instead.
+   *
    * @param {Uint8Array} message
    * @returns {Uint8Array} Signature bytes.
    */
   sign(message) {
     this._requireLive();
     return sign(this.sk, message, signingContext(this.descriptor));
+  }
+
+  /**
+   * Sign a message deterministically (FIPS 204 §3.5). The same
+   * `(wallet, message)` pair always yields byte-identical signatures.
+   * Use only when determinism is itself a protocol requirement (see
+   * {@link Wallet#sign} for the recommended hedged default and the
+   * TOB-QRLLIB-6 rationale).
+   *
+   * @param {Uint8Array} message
+   * @returns {Uint8Array} Signature bytes.
+   */
+  signDeterministic(message) {
+    this._requireLive();
+    return signDeterministic(this.sk, message, signingContext(this.descriptor));
   }
 
   /**
@@ -7277,6 +7375,82 @@ class Wallet {
    */
   static verify(signature, message, pk, descriptor) {
     return verify(signature, message, pk, signingContext(descriptor));
+  }
+
+  /**
+   * Verify a signature with a discriminated failure reason (TOB-QRLLIB-14
+   * — port from the `go-qrllib` Trail of Bits engagement). Returns
+   * `{ ok: true }` on success, or `{ ok: false, reason }` with a typed
+   * reason on failure. This is a non-destructive companion to
+   * {@link Wallet.verify} — the boolean form is unchanged.
+   *
+   * Failure-reason taxonomy:
+   *  - `'invalid-descriptor'` — `descriptor` is not a `Descriptor` instance
+   *  - `'invalid-signature-type'` — `signature` is not a `Uint8Array`
+   *  - `'invalid-signature-length'` — `signature` is the wrong byte length
+   *  - `'invalid-message-type'` — `message` is not a `Uint8Array`
+   *  - `'invalid-pk-type'` — `pk` is not a `Uint8Array`
+   *  - `'invalid-pk-length'` — `pk` is the wrong byte length
+   *  - `'verification-failed'` — well-formed inputs, signature does not verify
+   *
+   * The boolean {@link Wallet.verify} collapses all of these into `false`
+   * to preserve constant-time semantics at the verification boundary;
+   * `verifyWithReason` exposes them only for diagnostic / error-reporting
+   * use cases (e.g. wallet UI telling the user the descriptor is wrong vs.
+   * the signature is forged). Do not branch program logic on the reason
+   * in security-sensitive paths.
+   *
+   * @param {Uint8Array} signature
+   * @param {Uint8Array} message
+   * @param {Uint8Array} pk
+   * @param {Descriptor} descriptor
+   * @returns {{ok: true} | {ok: false, reason: string}}
+   */
+  static verifyWithReason(signature, message, pk, descriptor) {
+    if (!(descriptor instanceof Descriptor)) {
+      return { ok: false, reason: 'invalid-descriptor' };
+    }
+    if (!(signature instanceof Uint8Array)) {
+      return { ok: false, reason: 'invalid-signature-type' };
+    }
+    if (!(message instanceof Uint8Array)) {
+      return { ok: false, reason: 'invalid-message-type' };
+    }
+    if (!(pk instanceof Uint8Array)) {
+      return { ok: false, reason: 'invalid-pk-type' };
+    }
+    // Length checks delegate to the lower layer; we re-classify the
+    // lower layer's typed errors into our reason taxonomy here. The
+    // final `throw e` in the catch block below is a defensive safety
+    // net — the lower-layer `verify`'s complete error taxonomy
+    // ({sk,signature,message,pk,ctx} × {type,length}) is fully
+    // classified into the `if` branches above. If a future lower-layer
+    // change introduces an error message we haven't classified yet,
+    // we want the surprise to propagate rather than be silently
+    // collapsed into 'verification-failed'. The re-raise is therefore
+    // unreachable from any current public-API call site; covered by
+    // inspection rather than by a test that would have to monkey-patch
+    // the lower layer.
+    try {
+      const ok = verify(signature, message, pk, signingContext(descriptor));
+      return ok ? { ok: true } : { ok: false, reason: 'verification-failed' };
+    } catch (e) {
+      // `e && e.message || e` is defensive against a `throw null`,
+      // `throw undefined`, or `throw { message: '' }` from the lower
+      // layer; under the current lower-layer contract `e` is always an
+      // `Error` instance with a non-empty message, so the short-circuit
+      // fallback branches are unreachable today.
+      /* c8 ignore next */
+      const msg = String((e && e.message) || e);
+      if (msg.includes('signature must be')) {
+        return { ok: false, reason: 'invalid-signature-length' };
+      }
+      if (msg.includes('pk must be')) {
+        return { ok: false, reason: 'invalid-pk-length' };
+      }
+      /* c8 ignore next 2 */
+      throw e;
+    }
   }
 
   /**

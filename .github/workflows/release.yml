@@ -6,8 +6,12 @@ on:
   pull_request:
     branches: [main]
 
-permissions:
-  contents: read
+# Default-deny: each job opts in explicitly via its own `permissions:` block.
+permissions: {}
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # ===========================================================================
@@ -27,22 +31,22 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'theQRL/wallet.js'
     environment: npm-publish
     permissions:
-      contents: write
-      issues: write
-      pull-requests: write
-      id-token: write
+      contents: write       # semantic-release pushes the version-bump commit and tag back to main
+      issues: write         # semantic-release comments on resolved issues on release
+      pull-requests: write  # semantic-release comments on released PRs
+      id-token: write       # `npm publish --provenance` (sigstore OIDC)
     outputs:
       released: ${{ steps.check-release.outputs.released }}
       version: ${{ steps.check-release.outputs.version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '22.x'
           registry-url: 'https://registry.npmjs.org/'
@@ -61,18 +65,20 @@ jobs:
           echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
       - name: Setup SSH Agent
-        uses: webfactory/ssh-agent@v0.9.1
+        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
         with:
           ssh-private-key: ${{ secrets.BYPASS_SSH_KEY }}
 
       - name: Configure Git for SSH
+        env:
+          REPO: ${{ github.repository }}
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan github.com >> ~/.ssh/known_hosts
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global url."git@github.com:".insteadOf "https://github.com/"
-          git remote set-url origin git@github.com:${{ github.repository }}.git
+          git remote set-url origin "git@github.com:${REPO}.git"
 
       - name: Semantic Release (version & changelog)
         env:
@@ -81,13 +87,15 @@ jobs:
           GIT_AUTHOR_EMAIL: github-actions[bot]@users.noreply.github.com
           GIT_COMMITTER_NAME: github-actions[bot]
           GIT_COMMITTER_EMAIL: github-actions[bot]@users.noreply.github.com
-        run: npx semantic-release@24 --repository-url git@github.com:${{ github.repository }}.git
+          REPO: ${{ github.repository }}
+        run: npx semantic-release@24 --repository-url "git@github.com:${REPO}.git"
 
       - name: Check if release happened
         id: check-release
+        env:
+          OLD_VERSION: ${{ steps.version-before.outputs.version }}
         run: |
           NEW_VERSION=$(node -p "require('./package.json').version")
-          OLD_VERSION="${{ steps.version-before.outputs.version }}"
           echo "Old version: $OLD_VERSION, New version: $NEW_VERSION"
           if [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
             echo "released=true" >> "$GITHUB_OUTPUT"
@@ -101,7 +109,27 @@ jobs:
         if: steps.check-release.outputs.released == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --provenance --access public
+          VERSION: ${{ steps.check-release.outputs.version }}
+        # npm registry occasionally returns 404 on the publish PUT response
+        # even though the package write succeeded server-side (CDN/replication
+        # false negative). On non-zero exit, verify whether the version landed
+        # before failing the job.
+        run: |
+          set +e
+          npm publish --provenance --access public
+          code=$?
+          set -e
+          if [ "$code" -ne 0 ]; then
+            echo "publish exited $code — checking whether @theqrl/wallet.js@$VERSION actually landed"
+            sleep 15
+            published=$(npm view "@theqrl/wallet.js@$VERSION" version 2>/dev/null || true)
+            if [ "$published" = "$VERSION" ]; then
+              echo "version $VERSION is on the registry — treating as success"
+              exit 0
+            fi
+            echo "version $VERSION is NOT on the registry — failing"
+            exit "$code"
+          fi
 
   # ===========================================================================
   # Supply Chain: SBOM, Checksums, GitHub Attestations
@@ -112,18 +140,19 @@ jobs:
     needs: release
     if: needs.release.outputs.released == 'true'
     permissions:
-      contents: write
-      id-token: write
-      attestations: write
+      contents: write       # `gh release upload` writes SBOM + checksums to the release
+      id-token: write       # sigstore OIDC for the attest-* actions
+      attestations: write   # required by attest-build-provenance / attest-sbom
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
           ref: main
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '22.x'
 
@@ -138,40 +167,40 @@ jobs:
           find src -name "*.js" -type f | sort | xargs sha256sum >> dist/source-checksums-sha256.txt
 
       - name: Generate SBOM (SPDX)
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
           format: spdx-json
           output-file: dist/sbom-spdx.json
           artifact-name: sbom-spdx.json
 
       - name: Generate SBOM (CycloneDX)
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
           format: cyclonedx-json
           output-file: dist/sbom-cyclonedx.json
           artifact-name: sbom-cyclonedx.json
 
       - name: Attest checksums
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@b3e506e8c389afc651c5bacf2b8f2a1ea0557215 # v4
         with:
           subject-path: |
             dist/checksums-sha256.txt
             dist/checksums-sha512.txt
 
       - name: Attest SBOM (SPDX)
-        uses: actions/attest-sbom@v4
+        uses: actions/attest-sbom@36590ecaf038d6630c74f2da259095627d52ac11 # v4
         with:
           subject-path: dist/sbom-spdx.json
           sbom-path: dist/sbom-spdx.json
 
       - name: Attest SBOM (CycloneDX)
-        uses: actions/attest-sbom@v4
+        uses: actions/attest-sbom@36590ecaf038d6630c74f2da259095627d52ac11 # v4
         with:
           subject-path: dist/sbom-cyclonedx.json
           sbom-path: dist/sbom-cyclonedx.json
 
       - name: Attest package files
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@b3e506e8c389afc651c5bacf2b8f2a1ea0557215 # v4
         with:
           subject-path: |
             package.json
@@ -180,8 +209,9 @@ jobs:
       - name: Upload release artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.release.outputs.version }}
         run: |
-          gh release upload "v${{ needs.release.outputs.version }}" \
+          gh release upload "v${VERSION}" \
             dist/checksums-sha256.txt \
             dist/checksums-sha512.txt \
             dist/sbom-spdx.json \
@@ -196,16 +226,19 @@ jobs:
     runs-on: ubuntu-latest
     needs: release
     if: needs.release.outputs.released == 'true'
+    permissions:
+      contents: read        # checkout only; this job uploads via artifact (not gh release)
     outputs:
       hashes: ${{ steps.hash.outputs.hashes }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: main
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '22.x'
 
@@ -231,7 +264,7 @@ jobs:
           echo "hashes=$(sha256sum ./*.tgz | base64 -w0)" >> "$GITHUB_OUTPUT"
 
       - name: Upload tarball
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: npm-tarball
           path: dist/tarballs/*.tgz
@@ -242,9 +275,14 @@ jobs:
     needs: [release, slsa-subjects]
     if: needs.release.outputs.released == 'true'
     permissions:
-      actions: read
-      id-token: write
-      contents: write
+      actions: read     # slsa-github-generator inspects this workflow run's metadata
+      id-token: write   # slsa-github-generator mints the SLSA provenance OIDC token
+      contents: write   # slsa-github-generator uploads the provenance file to the release
+    # SLSA reusable workflow MUST be tag-pinned (not SHA-pinned) so the
+    # slsa-verifier can validate the generator's identity against the
+    # signed release tag. SHA-pinning here would break SLSA Level 3
+    # provenance verification. Zizmor `unpinned-uses` exception:
+    # see .github/zizmor.yml.
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
     with:
       base64-subjects: ${{ needs.slsa-subjects.outputs.hashes }}
@@ -257,15 +295,15 @@ jobs:
     needs: [release, slsa-provenance]
     if: needs.release.outputs.released == 'true'
     permissions:
-      contents: write
+      contents: write   # `gh release upload` writes provenance + tarball to the release
     steps:
       - name: Download provenance
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: provenance.intoto.jsonl
 
       - name: Download npm tarball
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: npm-tarball
           path: tarball
@@ -273,9 +311,11 @@ jobs:
       - name: Upload to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.release.outputs.version }}
+          REPO: ${{ github.repository }}
         run: |
-          gh release upload "v${{ needs.release.outputs.version }}" \
+          gh release upload "v${VERSION}" \
             provenance.intoto.jsonl \
             tarball/*.tgz \
-            --repo ${{ github.repository }} \
+            --repo "${REPO}" \
             --clobber

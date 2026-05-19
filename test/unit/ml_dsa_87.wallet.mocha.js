@@ -151,15 +151,52 @@ describe('ML-DSA-87 Wallet', () => {
     });
   });
 
-  describe('Sign matches vectors', () => {
+  // The pinned `wantSignature` vectors are the deterministic FIPS 204
+  // §3.5 outputs (matches go-qrllib / mldsa87 ACVP vectors). After
+  // TOB-QRLLIB-6 the wallet's default `sign()` is hedged and therefore
+  // produces fresh bytes on every call, so the byte-equality assertion
+  // here must use `signDeterministic`. Hedged `sign()` is covered by the
+  // verify-instead pattern in the `Sign & Verify` and `Hedged sign
+  // (TOB-QRLLIB-6)` blocks below.
+  describe('signDeterministic matches vectors (FIPS 204 §3.5)', () => {
     Object.entries(walletCreators).forEach(([creatorName, creator]) => {
       walletTestCases.forEach((tc) => {
         it(`${creatorName} - ${tc.name}`, () => {
           const w = creator(tc);
           const msg = utf8ToBytes(tc.message, 'utf8');
-          const sig = w.sign(msg);
+          const sig = w.signDeterministic(msg);
           expect(bytesToHex(sig)).to.equal(tc.wantSignature);
         });
+      });
+    });
+  });
+
+  describe('Hedged sign (TOB-QRLLIB-6) — distinct bytes, both verify', () => {
+    walletTestCases.forEach((tc) => {
+      it(`${tc.name}`, () => {
+        const w = createWalletFromMnemonic(tc);
+        const msg = utf8ToBytes(tc.message, 'utf8');
+        const sigA = w.sign(msg);
+        const sigB = w.sign(msg);
+
+        // Hedged: two signs of the same (sk, ctx, message) yield
+        // distinct signatures (FIPS 204 §3.4). Skip the empty-message
+        // case where some impls collapse, though ML-DSA still hedges.
+        if (msg.length > 0) {
+          expect(bytesToHex(sigA)).to.not.equal(bytesToHex(sigB));
+        }
+
+        // Both must verify under the same pk + descriptor.
+        const pk = w.getPK();
+        const desc = w.getDescriptor();
+        expect(MLDSA87.verify(sigA, msg, pk, desc)).to.equal(true);
+        expect(MLDSA87.verify(sigB, msg, pk, desc)).to.equal(true);
+
+        // The deterministic signature must also verify under the same
+        // pk + descriptor (hedged/deterministic are interchangeable at
+        // the verification boundary).
+        const sigDet = w.signDeterministic(msg);
+        expect(MLDSA87.verify(sigDet, msg, pk, desc)).to.equal(true);
       });
     });
   });

@@ -8,11 +8,17 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/**'
+      - '.github/zizmor.yml'
   pull_request:
     branches: [main]
     paths:
       - '.github/workflows/**'
+      - '.github/zizmor.yml'
   workflow_dispatch:
+
+concurrency:
+  group: actionlint-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   actionlint:
@@ -20,7 +26,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
 
       - name: Run actionlint
-        uses: raven-actions/actionlint@v2
+        uses: raven-actions/actionlint@205b530c5d9fa8f44ae9ed59f341a0db994aa6f8 # v2
+
+  zizmor:
+    name: zizmor static analysis (TOB-QRLLIB-15)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Install zizmor
+        run: pipx install zizmor
+
+      - name: Run zizmor (pedantic)
+        run: zizmor --persona=pedantic --config .github/zizmor.yml .github/workflows/

@@ -113,6 +113,17 @@ describe('Edge Cases', () => {
       expect(() => sign(wallet.getSK(), utf8ToBytes('test'), null)).to.throw('ctx must be Uint8Array or Buffer');
     });
 
+    // TOB-QRLLIB-6: the `randomized` boolean toggle between hedged (true,
+    // default) and deterministic (false). Anything that is not a boolean
+    // is a caller bug — refuse it loudly rather than silently coercing.
+    it('rejects non-boolean randomized flag', () => {
+      const sk = wallet.getSK();
+      const msg = utf8ToBytes('test');
+      expect(() => sign(sk, msg, ctx, 'true')).to.throw('randomized must be a boolean');
+      expect(() => sign(sk, msg, ctx, 1)).to.throw('randomized must be a boolean');
+      expect(() => sign(sk, msg, ctx, null)).to.throw('randomized must be a boolean');
+    });
+
     it('accepts Buffer secret key', () => {
       const sk = Buffer.from(wallet.getSK());
       const msg = utf8ToBytes('test');

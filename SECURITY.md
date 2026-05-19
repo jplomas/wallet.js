@@ -240,7 +240,8 @@ the window in which a live `Wallet` exists.
 | `new ExtendedSeed(bytes)` | Exactly 51 bytes, valid wallet type |
 | `new Descriptor(bytes)` | Exactly 3 bytes, valid wallet type |
 | `wallet.sign(message)` | message is Uint8Array |
-| `MLDSA87.verify(sig, msg, pk)` | All inputs are Uint8Array of correct lengths |
+| `wallet.signDeterministic(message)` | message is Uint8Array |
+| `MLDSA87.verify(sig, msg, pk, descriptor)` | All inputs are Uint8Array of correct lengths; descriptor is a `Descriptor` instance |
 | `stringToAddress(str)` | Starts with Q, 96 hex characters |
 
 ### Error Handling
@@ -264,6 +265,44 @@ try {
 Seed generation uses the Web Crypto API exclusively (`globalThis.crypto.getRandomValues`). This is a cryptographically secure random number generator available in both Node.js (20.19+) and modern browsers.
 
 An additional sanity check rejects output that is all zeros for buffers of 16 bytes or more.
+
+---
+
+## Signing Modes (TOB-QRLLIB-6)
+
+`Wallet#sign(message)` is **hedged by default** (FIPS 204 §3.4 — recommended). Per the ML-DSA-87 specification, the per-signature nonce is mixed with fresh randomness from the system RNG (`globalThis.crypto.getRandomValues`) on every call, so two signs over the same `(wallet, message)` pair produce **distinct** signature bytes; both verify under the same public key + descriptor.
+
+Hedged signing frustrates the fault-injection attack class against deterministic ML-DSA where an adversary who can flip a single bit during the `z` computation can differentiate two signatures of the same message and recover `s1`/`s2` by lattice differential analysis. Hardware wallets, cloud signers on untrusted silicon, and any deployment with a plausible fault-model should prefer the hedged default.
+
+The wallet exposes an explicit opt-in deterministic helper for protocols where determinism is itself a requirement:
+
+```javascript
+const wallet = MLDSA87.newWalletFromMnemonic(mnemonic);
+
+// Hedged (default, recommended): two signs differ; both verify
+const sigA = wallet.sign(message);
+const sigB = wallet.sign(message);
+// sigA !== sigB, both MLDSA87.verify(..., descriptor) === true
+
+// Deterministic (opt-in, FIPS 204 §3.5): byte-identical for same input
+const sigDet = wallet.signDeterministic(message);
+```
+
+Use `signDeterministic` only when determinism is a security or protocol requirement — for example RANDAO-style verifiable beacon contributions where every validator must produce the same signature for the same input, or KAT / ACVP vector reproduction. Verification is unchanged regardless of signing mode: hedged and deterministic signatures verify under the same public key + descriptor.
+
+---
+
+## Descriptor Binding (TOB-QRLLIB-3)
+
+Every wallet signature is bound to its descriptor via a domain-separated 8-byte signing context:
+
+```
+ctx = "ZOND" || SIGNING_CONTEXT_VERSION || descriptor   (4 + 1 + 3 = 8 bytes)
+```
+
+The wallet passes this `ctx` as the FIPS 204 ML-DSA-87 context parameter on both signing and verification. A signature produced under descriptor `D1` will **not** verify under any descriptor `D2 ≠ D1`, even if the public key and message bytes match — the cryptographic binding is structural. The `metamorphic: descriptor-binding` test suite (`test/unit/metamorphic.mocha.js`) covers this property.
+
+Bumping `SIGNING_CONTEXT_VERSION` is a hard break of the signature wire format and must coincide with a coordinated consensus / library activation.
 
 ---
 

@@ -46,14 +46,39 @@ function isBytes(input) {
 
 /**
  * Sign a message.
+ *
+ * Signing mode (TOB-QRLLIB-6 — port from the `go-qrllib` Trail of Bits
+ * engagement). The `randomized` flag selects between FIPS 204 §3.4
+ * (hedged) and §3.5 (deterministic) ML-DSA signing:
+ *
+ * - `randomized: true` — **hedged, recommended.** Per FIPS 204 §3.4 the
+ *   per-signature nonce is mixed with fresh randomness from the system
+ *   RNG on every call. Two signs over the same `(sk, ctx, message)`
+ *   produce **distinct** signature bytes; both verify under the same
+ *   public key. Hedged signing frustrates the fault-injection attack
+ *   class against deterministic ML-DSA where an adversary who can flip
+ *   a single bit during the `z` computation can differentiate two
+ *   signatures of the same message and recover `s1`/`s2` by lattice
+ *   differential analysis. This is the wallet's default.
+ *
+ * - `randomized: false` — **deterministic, opt-in.** Use only when the
+ *   deterministic property is itself a security or protocol requirement
+ *   — e.g. RANDAO-style verifiable beacon contributions where every
+ *   validator must produce the same signature for the same input, or
+ *   KAT / ACVP vector reproduction. Prefer the `signDeterministic`
+ *   helper to signal intent at the call site rather than passing a
+ *   positional boolean.
+ *
  * @param {Uint8Array} sk - Secret key (must be CryptoSecretKeyBytes bytes)
  * @param {Uint8Array} message - Message to sign
  * @param {Uint8Array} ctx - FIPS 204 context bytes (wallet layer passes the
  *   domain-separated `"ZOND" || version || descriptor` context)
+ * @param {boolean} [randomized=true] - `true` for hedged (recommended),
+ *   `false` for deterministic.
  * @returns {Uint8Array} signature
  * @throws {Error} If sk, message, or ctx is invalid
  */
-function sign(sk, message, ctx) {
+function sign(sk, message, ctx, randomized = true) {
   if (!isBytes(sk)) {
     throw new Error('sk must be Uint8Array or Buffer');
   }
@@ -66,10 +91,30 @@ function sign(sk, message, ctx) {
   if (!isBytes(ctx)) {
     throw new Error('ctx must be Uint8Array or Buffer');
   }
+  if (typeof randomized !== 'boolean') {
+    throw new Error('randomized must be a boolean');
+  }
 
-  const sm = cryptoSign(message, sk, false, ctx);
+  const sm = cryptoSign(message, sk, randomized, ctx);
   const signature = sm.slice(0, CryptoBytes);
   return signature;
+}
+
+/**
+ * Deterministic signing helper. Thin wrapper around {@link sign} with
+ * `randomized: false` that signals caller intent at the API surface
+ * rather than via a positional boolean. Use only when determinism is
+ * itself a protocol requirement (see {@link sign} JSDoc). For all
+ * other cases prefer {@link sign}, which defaults to hedged signing
+ * per FIPS 204 §3.4 and TOB-QRLLIB-6.
+ *
+ * @param {Uint8Array} sk - Secret key
+ * @param {Uint8Array} message - Message to sign
+ * @param {Uint8Array} ctx - FIPS 204 context bytes
+ * @returns {Uint8Array} signature
+ */
+function signDeterministic(sk, message, ctx) {
+  return sign(sk, message, ctx, false);
 }
 
 /**
@@ -108,4 +153,4 @@ function verify(signature, message, pk, ctx) {
   return cryptoSignVerify(sigBytes, msgBytes, pkBytes, ctx);
 }
 
-export { keygen, sign, verify };
+export { keygen, sign, signDeterministic, verify };

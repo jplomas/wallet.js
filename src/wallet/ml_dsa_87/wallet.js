@@ -12,7 +12,7 @@ import { signingContext } from '../common/context.js';
 import { Descriptor } from '../common/descriptor.js';
 import { Seed, ExtendedSeed } from '../common/seed.js';
 import { newMLDSA87Descriptor } from './descriptor.js';
-import { keygen, sign, verify } from './crypto.js';
+import { keygen, sign, signDeterministic, verify } from './crypto.js';
 
 /**
  * Property names that carry secret material. Kept non-enumerable so that
@@ -179,12 +179,35 @@ class Wallet {
    * Sign a message. The wallet binds the signature to its descriptor via
    * the domain-separated signing context; callers do not need to pass it
    * explicitly.
+   *
+   * Signing is **hedged** by default (FIPS 204 §3.4, recommended per
+   * TOB-QRLLIB-6) — two signs over the same `(wallet, message)` pair
+   * produce distinct signature bytes that both verify under the same
+   * public key. For protocols that require deterministic signatures
+   * (RANDAO-style verifiable beacon contributions, KAT / ACVP vector
+   * reproduction), use {@link Wallet#signDeterministic} instead.
+   *
    * @param {Uint8Array} message
    * @returns {Uint8Array} Signature bytes.
    */
   sign(message) {
     this._requireLive();
     return sign(this.sk, message, signingContext(this.descriptor));
+  }
+
+  /**
+   * Sign a message deterministically (FIPS 204 §3.5). The same
+   * `(wallet, message)` pair always yields byte-identical signatures.
+   * Use only when determinism is itself a protocol requirement (see
+   * {@link Wallet#sign} for the recommended hedged default and the
+   * TOB-QRLLIB-6 rationale).
+   *
+   * @param {Uint8Array} message
+   * @returns {Uint8Array} Signature bytes.
+   */
+  signDeterministic(message) {
+    this._requireLive();
+    return signDeterministic(this.sk, message, signingContext(this.descriptor));
   }
 
   /**
@@ -198,6 +221,82 @@ class Wallet {
    */
   static verify(signature, message, pk, descriptor) {
     return verify(signature, message, pk, signingContext(descriptor));
+  }
+
+  /**
+   * Verify a signature with a discriminated failure reason (TOB-QRLLIB-14
+   * — port from the `go-qrllib` Trail of Bits engagement). Returns
+   * `{ ok: true }` on success, or `{ ok: false, reason }` with a typed
+   * reason on failure. This is a non-destructive companion to
+   * {@link Wallet.verify} — the boolean form is unchanged.
+   *
+   * Failure-reason taxonomy:
+   *  - `'invalid-descriptor'` — `descriptor` is not a `Descriptor` instance
+   *  - `'invalid-signature-type'` — `signature` is not a `Uint8Array`
+   *  - `'invalid-signature-length'` — `signature` is the wrong byte length
+   *  - `'invalid-message-type'` — `message` is not a `Uint8Array`
+   *  - `'invalid-pk-type'` — `pk` is not a `Uint8Array`
+   *  - `'invalid-pk-length'` — `pk` is the wrong byte length
+   *  - `'verification-failed'` — well-formed inputs, signature does not verify
+   *
+   * The boolean {@link Wallet.verify} collapses all of these into `false`
+   * to preserve constant-time semantics at the verification boundary;
+   * `verifyWithReason` exposes them only for diagnostic / error-reporting
+   * use cases (e.g. wallet UI telling the user the descriptor is wrong vs.
+   * the signature is forged). Do not branch program logic on the reason
+   * in security-sensitive paths.
+   *
+   * @param {Uint8Array} signature
+   * @param {Uint8Array} message
+   * @param {Uint8Array} pk
+   * @param {Descriptor} descriptor
+   * @returns {{ok: true} | {ok: false, reason: string}}
+   */
+  static verifyWithReason(signature, message, pk, descriptor) {
+    if (!(descriptor instanceof Descriptor)) {
+      return { ok: false, reason: 'invalid-descriptor' };
+    }
+    if (!(signature instanceof Uint8Array)) {
+      return { ok: false, reason: 'invalid-signature-type' };
+    }
+    if (!(message instanceof Uint8Array)) {
+      return { ok: false, reason: 'invalid-message-type' };
+    }
+    if (!(pk instanceof Uint8Array)) {
+      return { ok: false, reason: 'invalid-pk-type' };
+    }
+    // Length checks delegate to the lower layer; we re-classify the
+    // lower layer's typed errors into our reason taxonomy here. The
+    // final `throw e` in the catch block below is a defensive safety
+    // net — the lower-layer `verify`'s complete error taxonomy
+    // ({sk,signature,message,pk,ctx} × {type,length}) is fully
+    // classified into the `if` branches above. If a future lower-layer
+    // change introduces an error message we haven't classified yet,
+    // we want the surprise to propagate rather than be silently
+    // collapsed into 'verification-failed'. The re-raise is therefore
+    // unreachable from any current public-API call site; covered by
+    // inspection rather than by a test that would have to monkey-patch
+    // the lower layer.
+    try {
+      const ok = verify(signature, message, pk, signingContext(descriptor));
+      return ok ? { ok: true } : { ok: false, reason: 'verification-failed' };
+    } catch (e) {
+      // `e && e.message || e` is defensive against a `throw null`,
+      // `throw undefined`, or `throw { message: '' }` from the lower
+      // layer; under the current lower-layer contract `e` is always an
+      // `Error` instance with a non-empty message, so the short-circuit
+      // fallback branches are unreachable today.
+      /* c8 ignore next */
+      const msg = String((e && e.message) || e);
+      if (msg.includes('signature must be')) {
+        return { ok: false, reason: 'invalid-signature-length' };
+      }
+      if (msg.includes('pk must be')) {
+        return { ok: false, reason: 'invalid-pk-length' };
+      }
+      /* c8 ignore next 2 */
+      throw e;
+    }
   }
 
   /**

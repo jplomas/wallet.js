@@ -36,6 +36,41 @@ export class Wallet {
      */
     static verify(signature: Uint8Array, message: Uint8Array, pk: Uint8Array, descriptor: Descriptor): boolean;
     /**
+     * Verify a signature with a discriminated failure reason (TOB-QRLLIB-14
+     * — port from the `go-qrllib` Trail of Bits engagement). Returns
+     * `{ ok: true }` on success, or `{ ok: false, reason }` with a typed
+     * reason on failure. This is a non-destructive companion to
+     * {@link Wallet.verify} — the boolean form is unchanged.
+     *
+     * Failure-reason taxonomy:
+     *  - `'invalid-descriptor'` — `descriptor` is not a `Descriptor` instance
+     *  - `'invalid-signature-type'` — `signature` is not a `Uint8Array`
+     *  - `'invalid-signature-length'` — `signature` is the wrong byte length
+     *  - `'invalid-message-type'` — `message` is not a `Uint8Array`
+     *  - `'invalid-pk-type'` — `pk` is not a `Uint8Array`
+     *  - `'invalid-pk-length'` — `pk` is the wrong byte length
+     *  - `'verification-failed'` — well-formed inputs, signature does not verify
+     *
+     * The boolean {@link Wallet.verify} collapses all of these into `false`
+     * to preserve constant-time semantics at the verification boundary;
+     * `verifyWithReason` exposes them only for diagnostic / error-reporting
+     * use cases (e.g. wallet UI telling the user the descriptor is wrong vs.
+     * the signature is forged). Do not branch program logic on the reason
+     * in security-sensitive paths.
+     *
+     * @param {Uint8Array} signature
+     * @param {Uint8Array} message
+     * @param {Uint8Array} pk
+     * @param {Descriptor} descriptor
+     * @returns {{ok: true} | {ok: false, reason: string}}
+     */
+    static verifyWithReason(signature: Uint8Array, message: Uint8Array, pk: Uint8Array, descriptor: Descriptor): {
+        ok: true;
+    } | {
+        ok: false;
+        reason: string;
+    };
+    /**
      * @param {{descriptor: Descriptor, seed: Seed, pk: Uint8Array, sk: Uint8Array, addressSize?: number}} opts
      */
     constructor({ descriptor, seed, pk, sk, addressSize }: {
@@ -93,10 +128,29 @@ export class Wallet {
      * Sign a message. The wallet binds the signature to its descriptor via
      * the domain-separated signing context; callers do not need to pass it
      * explicitly.
+     *
+     * Signing is **hedged** by default (FIPS 204 §3.4, recommended per
+     * TOB-QRLLIB-6) — two signs over the same `(wallet, message)` pair
+     * produce distinct signature bytes that both verify under the same
+     * public key. For protocols that require deterministic signatures
+     * (RANDAO-style verifiable beacon contributions, KAT / ACVP vector
+     * reproduction), use {@link Wallet#signDeterministic} instead.
+     *
      * @param {Uint8Array} message
      * @returns {Uint8Array} Signature bytes.
      */
     sign(message: Uint8Array): Uint8Array;
+    /**
+     * Sign a message deterministically (FIPS 204 §3.5). The same
+     * `(wallet, message)` pair always yields byte-identical signatures.
+     * Use only when determinism is itself a protocol requirement (see
+     * {@link Wallet#sign} for the recommended hedged default and the
+     * TOB-QRLLIB-6 rationale).
+     *
+     * @param {Uint8Array} message
+     * @returns {Uint8Array} Signature bytes.
+     */
+    signDeterministic(message: Uint8Array): Uint8Array;
     /**
      * Redacted JSON shape used by `JSON.stringify`. Returns only public
      * information — address and public key. Secret material (sk, seed,
