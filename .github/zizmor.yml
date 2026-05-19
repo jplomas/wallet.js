@@ -1,8 +1,9 @@
 # zizmor configuration for wallet.js
 #
 # zizmor (https://docs.zizmor.sh) is a static-analysis linter for GitHub
-# Actions workflow files. We run it as a CI gate (.github/workflows/actionlint.yml)
-# in --persona=pedantic mode at all severities — any new finding zizmor
+# Actions workflow files. We run it as a CI gate
+# (.github/workflows/actionlint.yml) in --persona=pedantic mode at all
+# severities — any new finding fails the build.
 # knows about, of any severity, fails the build. The configuration below
 # records the deliberate exceptions.
 #

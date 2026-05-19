@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: actionlint-${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -26,24 +26,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
       - name: Run actionlint
-        uses: raven-actions/actionlint@205b530c5d9fa8f44ae9ed59f341a0db994aa6f8 # v2
+        uses: raven-actions/actionlint@205b530c5d9fa8f44ae9ed59f341a0db994aa6f8 # v2.1.2
 
   zizmor:
-    name: zizmor static analysis (TOB-QRLLIB-15)
+    name: zizmor (Actions security analysis)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout repository
+      security-events: write # upload SARIF to GitHub Advanced Security
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
-      - name: Install zizmor
-        run: pipx install zizmor
-
-      - name: Run zizmor (pedantic)
-        run: zizmor --persona=pedantic --config .github/zizmor.yml .github/workflows/
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@b1d7e1fb5de872772f31590499237e7cce841e8e # v0.5.3
+        with:
+          persona: pedantic
+          config: .github/zizmor.yml

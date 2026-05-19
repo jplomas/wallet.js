@@ -1,6 +1,6 @@
 {
   "name": "@theqrl/wallet.js",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "description": "Quantum-resistant wallet library for The QRL using ML-DSA-87 (FIPS 204)",
   "type": "module",
   "main": "dist/cjs/wallet.js",

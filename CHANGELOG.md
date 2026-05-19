@@ -1,3 +1,13 @@
+## [5.0.0](https://github.com/theQRL/wallet.js/compare/v4.0.0...v5.0.0) (2026-04-23)
+
+### ⚠ BREAKING CHANGES
+
+* ctx is now ZOND || version || descriptor
+
+### Features
+
+* ctx is now ZOND || version || descriptor ([6ad0260](https://github.com/theQRL/wallet.js/commit/6ad026050da21dcdf7c067135ae82b007fc6bf42))
+
 ## [4.0.0](https://github.com/theQRL/wallet.js/compare/v3.0.1...v4.0.0) (2026-04-16)
 
 ### ⚠ BREAKING CHANGES
