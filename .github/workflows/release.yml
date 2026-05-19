@@ -1,34 +1,60 @@
 name: Release
 
+# Publishes on push to main; branch protection + the preflight job below
+# gate the publish path so unverified code never reaches npm.
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
+
+# Default-deny: each job opts in explicitly via its own `permissions:` block.
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
-
 jobs:
-  # ===========================================================================
-  # CI: Lint, Test, Browser Tests (reusable workflow)
-  # ===========================================================================
-  ci:
-    name: CI
-    uses: ./.github/workflows/ci.yml
+  # Defence-in-depth: re-runs lint + tests + build + dist-clean on the
+  # checked-out commit before the publish path begins.
+  preflight:
+    name: Preflight (lint + test + build + dist-clean)
+    runs-on: ubuntu-latest
+    if: github.repository == 'theQRL/wallet.js'
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22.x'
+
+      - run: npm ci
+      - run: npm run lint-check
+      - run: npm test
+      - run: npm run build
+      - name: Verify dist/ is up to date
+        run: |
+          if [ -n "$(git diff --name-only dist/)" ]; then
+            echo "::error::dist/ files are out of date relative to src/. Run 'npm run build' and commit the result before merging."
+            git diff --stat dist/
+            exit 1
+          fi
 
   # ===========================================================================
   # Release: Semantic Release + npm Publish
   # ===========================================================================
   release:
     name: Release
-    needs: ci
+    needs: preflight
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'theQRL/wallet.js'
+    if: github.repository == 'theQRL/wallet.js'
     environment: npm-publish
     permissions:
       contents: write # push release commits and tags via semantic-release
@@ -42,6 +68,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          # Always release from tip of main, not the triggering commit.
+          ref: main
           fetch-depth: 0
           persist-credentials: false
 
@@ -70,6 +98,8 @@ jobs:
           ssh-private-key: ${{ secrets.BYPASS_SSH_KEY }}
 
       - name: Configure Git for SSH
+        env:
+          REPO: ${{ github.repository }}
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan github.com >> ~/.ssh/known_hosts
@@ -85,6 +115,7 @@ jobs:
           GIT_AUTHOR_EMAIL: github-actions[bot]@users.noreply.github.com
           GIT_COMMITTER_NAME: github-actions[bot]
           GIT_COMMITTER_EMAIL: github-actions[bot]@users.noreply.github.com
+          REPO: ${{ github.repository }}
         run: npx semantic-release@24 --repository-url "git@github.com:${GITHUB_REPOSITORY}.git"
 
       - name: Check if release happened
@@ -106,7 +137,27 @@ jobs:
         if: steps.check-release.outputs.released == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --provenance --access public
+          VERSION: ${{ steps.check-release.outputs.version }}
+        # npm registry occasionally returns 404 on the publish PUT response
+        # even though the package write succeeded server-side (CDN/replication
+        # false negative). On non-zero exit, verify whether the version landed
+        # before failing the job.
+        run: |
+          set +e
+          npm publish --provenance --access public
+          code=$?
+          set -e
+          if [ "$code" -ne 0 ]; then
+            echo "publish exited $code — checking whether @theqrl/wallet.js@$VERSION actually landed"
+            sleep 15
+            published=$(npm view "@theqrl/wallet.js@$VERSION" version 2>/dev/null || true)
+            if [ "$published" = "$VERSION" ]; then
+              echo "version $VERSION is on the registry — treating as success"
+              exit 0
+            fi
+            echo "version $VERSION is NOT on the registry — failing"
+            exit "$code"
+          fi
 
   # ===========================================================================
   # Supply Chain: SBOM, Checksums, GitHub Attestations
@@ -203,6 +254,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: release
     if: needs.release.outputs.released == 'true'
+    permissions:
+      contents: read        # checkout only; this job uploads via artifact (not gh release)
     outputs:
       hashes: ${{ steps.hash.outputs.hashes }}
     steps:
@@ -253,6 +306,11 @@ jobs:
       actions: read # SLSA generator inspects the run's workflow definition
       id-token: write # SLSA provenance is signed via OIDC
       contents: write # upload provenance to GitHub Release
+    # SLSA reusable workflow MUST be tag-pinned (not SHA-pinned) so the
+    # slsa-verifier can validate the generator's identity against the
+    # signed release tag. SHA-pinning here would break SLSA Level 3
+    # provenance verification. Zizmor `unpinned-uses` exception:
+    # see .github/zizmor.yml.
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
     with:
       base64-subjects: ${{ needs.slsa-subjects.outputs.hashes }}
@@ -282,6 +340,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_VERSION: ${{ needs.release.outputs.version }}
+          REPO: ${{ github.repository }}
         run: |
           gh release upload "v${RELEASE_VERSION}" \
             provenance.intoto.jsonl \

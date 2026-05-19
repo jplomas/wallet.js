@@ -106,7 +106,8 @@ const wallet = newWalletFromExtendedSeed('0x01000000...'); // 51-byte hex
 | `getPK()` | `Uint8Array` | Public key (2,592 bytes) |
 | `getSK()` | `Uint8Array` | Secret key (4,896 bytes) |
 | `getHexExtendedSeed()` | `string` | Extended seed as hex with 0x prefix |
-| `sign(message)` | `Uint8Array` | Sign a message (4,627-byte signature) |
+| `sign(message)` | `Uint8Array` | Sign a message (4,627-byte signature). **Hedged by default** (FIPS 204 §3.4, recommended per TOB-QRLLIB-6) — two signs of the same message produce distinct bytes that both verify under the same pk + descriptor |
+| `signDeterministic(message)` | `Uint8Array` | Sign deterministically (FIPS 204 §3.5). Use only when determinism is itself a protocol requirement (RANDAO-style beacon contributions, KAT / ACVP vector reproduction). See [SECURITY.md](./SECURITY.md#signing-modes-tob-qrllib-6) |
 | `zeroize()` | `void` | Overwrite sensitive data with zeros |
 
 ### Static Methods
