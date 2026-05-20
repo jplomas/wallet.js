@@ -1,3 +1,13 @@
+## [6.0.0](https://github.com/theQRL/wallet.js/compare/v5.1.0...v6.0.0) (2026-05-20)
+
+### ⚠ BREAKING CHANGES
+
+* 64-byte addresses only
+
+### Features
+
+* 64-byte addresses only ([2b469a1](https://github.com/theQRL/wallet.js/commit/2b469a18d2b6510f587e51b006ae556031090c8e))
+
 ## [5.1.0](https://github.com/theQRL/wallet.js/compare/v5.0.0...v5.1.0) (2026-05-19)
 
 ### Features
