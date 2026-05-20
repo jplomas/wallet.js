@@ -1,30 +1,26 @@
 export class Wallet {
     /**
-     * Create a new random wallet(non-deterministic).
-     * @param {[number, number]} [metadata=[0,0] ]
-     * @param {number} [addressSize=DEFAULT_ADDRESS_SIZE] Address length in bytes.
+     * Create a new random wallet (non-deterministic).
+     * @param {[number, number]} [metadata=[0,0]]
      * @returns {Wallet}
      */
-    static newWallet(metadata?: [number, number], addressSize?: number): Wallet;
+    static newWallet(metadata?: [number, number]): Wallet;
     /**
      * @param {Seed} seed
      * @param {[number, number]} [metadata=[0,0]]
-     * @param {number} [addressSize=DEFAULT_ADDRESS_SIZE] Address length in bytes.
      * @returns {Wallet}
      */
-    static newWalletFromSeed(seed: Seed, metadata?: [number, number], addressSize?: number): Wallet;
+    static newWalletFromSeed(seed: Seed, metadata?: [number, number]): Wallet;
     /**
      * @param {ExtendedSeed} extendedSeed
-     * @param {number} [addressSize=DEFAULT_ADDRESS_SIZE] Address length in bytes.
      * @returns {Wallet}
      */
-    static newWalletFromExtendedSeed(extendedSeed: ExtendedSeed, addressSize?: number): Wallet;
+    static newWalletFromExtendedSeed(extendedSeed: ExtendedSeed): Wallet;
     /**
      * @param {string} mnemonic
-     * @param {number} [addressSize=DEFAULT_ADDRESS_SIZE] Address length in bytes.
      * @returns {Wallet}
      */
-    static newWalletFromMnemonic(mnemonic: string, addressSize?: number): Wallet;
+    static newWalletFromMnemonic(mnemonic: string): Wallet;
     /**
      * Verify a signature. The descriptor is required so verification uses
      * the same domain-separated context that signing did.
@@ -71,27 +67,18 @@ export class Wallet {
         reason: string;
     };
     /**
-     * @param {{descriptor: Descriptor, seed: Seed, pk: Uint8Array, sk: Uint8Array, addressSize?: number}} opts
+     * @param {{descriptor: Descriptor, seed: Seed, pk: Uint8Array, sk: Uint8Array}} opts
      */
-    constructor({ descriptor, seed, pk, sk, addressSize }: {
+    constructor({ descriptor, seed, pk, sk }: {
         descriptor: Descriptor;
         seed: Seed;
         pk: Uint8Array;
         sk: Uint8Array;
-        addressSize?: number;
     });
     descriptor: Descriptor;
     seed: Seed;
     pk: Uint8Array<ArrayBufferLike>;
     sk: Uint8Array<ArrayBufferLike>;
-    /**
-     * Address length in bytes this wallet derives. Defaults to
-     * {@link DEFAULT_ADDRESS_SIZE} (20, NIST Category 1 — v2.x contract);
-     * pass `addressSize: ADDRESS_SIZE_CATEGORY_5` (48) on construction to
-     * get NIST Category 5 post-quantum collision resistance.
-     * @type {number}
-     */
-    addressSize: number;
     extendedSeed: ExtendedSeed;
     /** @private */
     private _zeroized;

@@ -100,8 +100,8 @@ const wallet = newWalletFromExtendedSeed('0x01000000...'); // 51-byte hex
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `getAddressStr()` | `string` | Address with Q prefix (e.g., `Qabc123...`) |
-| `getAddress()` | `Uint8Array` | Raw address bytes (length = `wallet.addressSize`) |
+| `getAddressStr()` | `string` | Address with Q prefix (e.g., `Qabc123...`), 129 chars total |
+| `getAddress()` | `Uint8Array` | Raw address bytes (64 bytes, see `ADDRESS_SIZE`) |
 | `getMnemonic()` | `string` | 34-word mnemonic phrase |
 | `getPK()` | `Uint8Array` | Public key (2,592 bytes) |
 | `getSK()` | `Uint8Array` | Secret key (4,896 bytes) |
@@ -134,31 +134,12 @@ const ctx = signingContext(wallet.getDescriptor()); // Uint8Array(8)
 
 Bumping `SIGNING_CONTEXT_VERSION` is a hard break of the signature wire format: signatures produced under a new version will not verify under the old one. A version bump must coincide with a coordinated consensus / library activation.
 
-### Configurable Address Size
-
-Every `Wallet` factory accepts an optional trailing `addressSize` argument:
-
-```javascript
-import { MLDSA87, ADDRESS_SIZE_CATEGORY_5 } from '@theqrl/wallet.js';
-
-// Default — 20-byte (NIST Category 1) addresses. Matches wallet.js 2.x.
-const wallet = MLDSA87.newWallet();
-wallet.addressSize; // 20
-wallet.getAddressStr(); // 'Q' + 40 hex chars
-
-// Opt-in — 48-byte (NIST Category 5) addresses:
-const walletCat5 = MLDSA87.newWallet([0, 0], ADDRESS_SIZE_CATEGORY_5);
-walletCat5.addressSize; // 48
-walletCat5.getAddressStr(); // 'Q' + 96 hex chars
-```
-
-The same optional argument is available on `newWalletFromSeed(seed, metadata, addressSize)`, `newWalletFromExtendedSeed(extendedSeed, addressSize)`, and `newWalletFromMnemonic(mnemonic, addressSize)`. See [SECURITY.md §Address Derivation](SECURITY.md#address-derivation) for the security trade-off.
-
 ### Address Utilities
 
-**Address Format:** `Q` prefix followed by 2 × `addressSize` lowercase hex characters. Default is 20 bytes (41-char string); opt in to 48 bytes (97-char string) via `ADDRESS_SIZE_CATEGORY_5`.
+**Address Format:** `Q` prefix followed by exactly 128 lowercase hex characters (64-byte address, NIST Category 5). The 64-byte size matches go-qrllib's `AddressSize` and rust-qrllib's `ADDRESS_SIZE` — there is one canonical address size across all QRL implementations.
+
 - Output is always lowercase; input parsing is case-insensitive
-- `addressToString`, `stringToAddress`, and `isValidAddress` are length-agnostic — they accept any `Q` + even-length hex string, so 20-byte and 48-byte addresses coexist transparently.
+- `addressToString`, `stringToAddress`, and `isValidAddress` enforce the exact 64-byte (128-hex-char) length and reject anything else
 - No checksum encoding (unlike EIP-55) — `isValidAddress()` checks format only, not correctness. A single mistyped character will produce a valid but unrelated address. Applications should implement their own checksum or confirmation UX to guard against transcription errors. See [SECURITY.md](SECURITY.md#address-security) for recommendations.
 
 ```javascript

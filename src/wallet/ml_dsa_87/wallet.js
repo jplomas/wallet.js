@@ -7,7 +7,6 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 import { randomBytes } from '../../utils/random.js';
 import { mnemonicToBin, binToMnemonic } from '../misc/mnemonic.js';
 import { getAddressFromPKAndDescriptor, addressToString } from '../common/address.js';
-import { DEFAULT_ADDRESS_SIZE } from '../common/constants.js';
 import { signingContext } from '../common/context.js';
 import { Descriptor } from '../common/descriptor.js';
 import { Seed, ExtendedSeed } from '../common/seed.js';
@@ -26,24 +25,13 @@ const SECRET_FIELDS = ['seed', 'sk', 'extendedSeed', '_zeroized'];
 
 class Wallet {
   /**
-   * @param {{descriptor: Descriptor, seed: Seed, pk: Uint8Array, sk: Uint8Array, addressSize?: number}} opts
+   * @param {{descriptor: Descriptor, seed: Seed, pk: Uint8Array, sk: Uint8Array}} opts
    */
-  constructor({ descriptor, seed, pk, sk, addressSize = DEFAULT_ADDRESS_SIZE }) {
-    if (!Number.isInteger(addressSize) || addressSize <= 0) {
-      throw new Error('addressSize must be a positive integer');
-    }
+  constructor({ descriptor, seed, pk, sk }) {
     this.descriptor = descriptor;
     this.seed = seed;
     this.pk = pk;
     this.sk = sk;
-    /**
-     * Address length in bytes this wallet derives. Defaults to
-     * {@link DEFAULT_ADDRESS_SIZE} (20, NIST Category 1 — v2.x contract);
-     * pass `addressSize: ADDRESS_SIZE_CATEGORY_5` (48) on construction to
-     * get NIST Category 5 post-quantum collision resistance.
-     * @type {number}
-     */
-    this.addressSize = addressSize;
     this.extendedSeed = ExtendedSeed.newExtendedSeed(descriptor, seed);
     /** @private */
     this._zeroized = false;
@@ -53,18 +41,17 @@ class Wallet {
   }
 
   /**
-   * Create a new random wallet(non-deterministic).
-   * @param {[number, number]} [metadata=[0,0] ]
-   * @param {number} [addressSize=DEFAULT_ADDRESS_SIZE] Address length in bytes.
+   * Create a new random wallet (non-deterministic).
+   * @param {[number, number]} [metadata=[0,0]]
    * @returns {Wallet}
    */
-  static newWallet(metadata = [0, 0], addressSize = DEFAULT_ADDRESS_SIZE) {
+  static newWallet(metadata = [0, 0]) {
     const descriptor = newMLDSA87Descriptor(metadata);
     const seedBytes = randomBytes(48);
     try {
       const seed = new Seed(seedBytes);
       const { pk, sk } = keygen(seed);
-      return new Wallet({ descriptor, seed, pk, sk, addressSize });
+      return new Wallet({ descriptor, seed, pk, sk });
     } finally {
       seedBytes.fill(0);
     }
@@ -73,37 +60,34 @@ class Wallet {
   /**
    * @param {Seed} seed
    * @param {[number, number]} [metadata=[0,0]]
-   * @param {number} [addressSize=DEFAULT_ADDRESS_SIZE] Address length in bytes.
    * @returns {Wallet}
    */
-  static newWalletFromSeed(seed, metadata = [0, 0], addressSize = DEFAULT_ADDRESS_SIZE) {
+  static newWalletFromSeed(seed, metadata = [0, 0]) {
     const descriptor = newMLDSA87Descriptor(metadata);
     const { pk, sk } = keygen(seed);
-    return new Wallet({ descriptor, seed, pk, sk, addressSize });
+    return new Wallet({ descriptor, seed, pk, sk });
   }
 
   /**
    * @param {ExtendedSeed} extendedSeed
-   * @param {number} [addressSize=DEFAULT_ADDRESS_SIZE] Address length in bytes.
    * @returns {Wallet}
    */
-  static newWalletFromExtendedSeed(extendedSeed, addressSize = DEFAULT_ADDRESS_SIZE) {
+  static newWalletFromExtendedSeed(extendedSeed) {
     const descriptor = extendedSeed.getDescriptor();
     const seed = extendedSeed.getSeed();
     const { pk, sk } = keygen(seed);
-    return new Wallet({ descriptor, seed, pk, sk, addressSize });
+    return new Wallet({ descriptor, seed, pk, sk });
   }
 
   /**
    * @param {string} mnemonic
-   * @param {number} [addressSize=DEFAULT_ADDRESS_SIZE] Address length in bytes.
    * @returns {Wallet}
    */
-  static newWalletFromMnemonic(mnemonic, addressSize = DEFAULT_ADDRESS_SIZE) {
+  static newWalletFromMnemonic(mnemonic) {
     const bin = mnemonicToBin(mnemonic);
     try {
       const extendedSeed = new ExtendedSeed(bin);
-      return this.newWalletFromExtendedSeed(extendedSeed, addressSize);
+      return this.newWalletFromExtendedSeed(extendedSeed);
     } finally {
       bin.fill(0);
     }
@@ -111,7 +95,7 @@ class Wallet {
 
   /** @returns {Uint8Array} */
   getAddress() {
-    return getAddressFromPKAndDescriptor(this.pk, this.descriptor, this.addressSize);
+    return getAddressFromPKAndDescriptor(this.pk, this.descriptor);
   }
 
   /** @returns {string} */

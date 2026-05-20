@@ -3,15 +3,7 @@
  * @module index
  */
 
-import {
-  ADDRESS_SIZE,
-  ADDRESS_SIZE_CATEGORY_1,
-  ADDRESS_SIZE_CATEGORY_5,
-  DEFAULT_ADDRESS_SIZE,
-  DESCRIPTOR_SIZE,
-  EXTENDED_SEED_SIZE,
-  SEED_SIZE,
-} from './wallet/common/constants.js';
+import { ADDRESS_SIZE, DESCRIPTOR_SIZE, EXTENDED_SEED_SIZE, SEED_SIZE } from './wallet/common/constants.js';
 import {
   getAddressFromPKAndDescriptor,
   stringToAddress,
@@ -39,9 +31,6 @@ export {
   Descriptor,
   DESCRIPTOR_SIZE,
   ADDRESS_SIZE,
-  ADDRESS_SIZE_CATEGORY_1,
-  ADDRESS_SIZE_CATEGORY_5,
-  DEFAULT_ADDRESS_SIZE,
   SIGNING_CONTEXT_PREFIX,
   SIGNING_CONTEXT_SIZE,
   SIGNING_CONTEXT_VERSION,

@@ -43,56 +43,23 @@ Seed (48 bytes, random)
 ### Address Derivation
 
 ```
-Address = SHAKE-256(Descriptor || PublicKey, addressSize bytes)
+Address = SHAKE-256(Descriptor || PublicKey, ADDRESS_SIZE)
 ```
 
-The address length is **configurable** via the `addressSize` parameter.
+`ADDRESS_SIZE` is **64 bytes** (NIST Category 5). The 64-byte address
+produces a `Q` + 128 hex-character string (129 characters total). This
+matches go-qrllib's `AddressSize` and rust-qrllib's `ADDRESS_SIZE`
+constants — one canonical size across QRL implementations.
 
-| Size     | Constant                   | Post-Quantum Category | String form (with `Q`) |
-|----------|----------------------------|-----------------------|------------------------|
-| 20 bytes | `ADDRESS_SIZE_CATEGORY_1`  | NIST Category 1       | 41 chars               |
-| 48 bytes | `ADDRESS_SIZE_CATEGORY_5`  | NIST Category 5       | 97 chars               |
+The 64-byte (512-bit) size provides ≈256-bit classical / ≈128-bit
+quantum collision resistance, exceeding the NIST Category 5 collision
+target by 2¹²⁸ classical / matching it at 2¹²⁸ quantum. The address
+never becomes the weakest link in the security chain — the underlying
+ML-DSA-87 signature scheme targets the same Level 5.
 
-**Default: 20 bytes (NIST Category 1).** This preserves the wallet.js 2.x API
-contract: callers that do not specify `addressSize` get the historical value,
-so existing integrations keep working without code changes.
-
-**Opt-in: 48 bytes (NIST Category 5).** Applications that want the address to
-match the post-quantum collision resistance of the underlying signature
-schemes (ML-DSA-87 targets NIST Level 5) should pass
-`ADDRESS_SIZE_CATEGORY_5` explicitly:
-
-```javascript
-import { MLDSA87, ADDRESS_SIZE_CATEGORY_5 } from '@theqrl/wallet.js';
-
-// Default — 20-byte (Cat 1) addresses, matches wallet.js 2.x:
-const w = MLDSA87.newWallet();
-
-// Opt-in to 48-byte (Cat 5) addresses:
-const wCat5 = MLDSA87.newWallet([0, 0], ADDRESS_SIZE_CATEGORY_5);
-```
-
-All `Wallet` factory methods (`newWallet`, `newWalletFromSeed`,
-`newWalletFromExtendedSeed`, `newWalletFromMnemonic`) accept an optional
-trailing `addressSize` argument; the standalone
-`getAddressFromPKAndDescriptor(pk, descriptor, addressSize?)` helper accepts
-the same parameter.
-
-**Security trade-off.** SHAKE-256 is an extendable-output function, so the
-20-byte address is literally the first 40 hex characters of the corresponding
-48-byte address for the same (descriptor, pk). The choice is about how much
-collision resistance the address itself provides; the underlying signature
-scheme's strength is unchanged.
-
-- At 20 bytes (160 bits): ≈80-bit classical / ≈53-bit quantum collision
-  resistance — consistent with v2.x behavior and sufficient for applications
-  that rely on application-layer checksums or out-of-band address confirmation.
-- At 48 bytes (384 bits): ≈192-bit classical / ≈128-bit quantum collision
-  resistance — matches the post-quantum security level of ML-DSA-87 so the
-  address does not become the weakest link.
-
-Addresses are displayed with a `Q` prefix in lowercase hexadecimal, always
-2 × `addressSize` hex characters long.
+Addresses are displayed with a `Q` prefix in lowercase hexadecimal,
+always exactly 129 characters long. Helpers (`addressToString`,
+`stringToAddress`, `isValidAddress`) reject any other length.
 
 ---
 
@@ -134,10 +101,10 @@ Addresses are displayed with a `Q` prefix in lowercase hexadecimal, always
 
 ### No Built-in Checksum
 
-**Important:** QRL addresses do not include a checksum (unlike EIP-55 mixed-case encoding in Ethereum). `isValidAddress()` only checks the structural format — `Q` prefix followed by an even number of lowercase/uppercase hex characters — it cannot detect a mistyped or truncated address. Length is not fixed by the validator because 20-byte and 48-byte addresses coexist; consumers that require a specific length should check `stringToAddress(addr).length` after validation.
+**Important:** QRL addresses do not include a checksum (unlike EIP-55 mixed-case encoding in Ethereum). `isValidAddress()` checks the structural format — `Q` prefix followed by exactly 128 lowercase/uppercase hex characters (the canonical 64-byte address). It cannot detect a mistyped address that still happens to be the right length.
 
 **Implications:**
-- Any `Q` + even-length hex string passes structural validation (20-byte or 48-byte)
+- Any `Q` + 128 hex character string passes structural validation
 - A single character error produces a valid but unrelated address
 - Funds sent to a mistyped address are unrecoverable
 

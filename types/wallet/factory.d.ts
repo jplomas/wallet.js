@@ -2,13 +2,10 @@
  * Construct a wallet from an ExtendedSeed by auto-selecting the correct implementation.
  *
  * @param {ExtendedSeed|Uint8Array|string} extendedSeed - ExtendedSeed instance, 51 bytes or hex string.
- * @param {number} [addressSize] Address length in bytes. Defaults to the
- *   wallet implementation's default (currently 20 bytes — NIST Category 1,
- *   the wallet.js 2.x contract). Pass 48 for NIST Category 5.
  * @returns {MLDSA87} Wallet instance
  * @throws {Error} If wallet type is unsupported
  */
-export function newWalletFromExtendedSeed(extendedSeed: ExtendedSeed | Uint8Array | string, addressSize?: number): MLDSA87;
+export function newWalletFromExtendedSeed(extendedSeed: ExtendedSeed | Uint8Array | string): MLDSA87;
 import { ExtendedSeed } from './common/seed.js';
 import { Wallet as MLDSA87 } from './ml_dsa_87/wallet.js';
 //# sourceMappingURL=factory.d.ts.map

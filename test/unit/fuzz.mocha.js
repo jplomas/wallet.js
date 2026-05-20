@@ -80,9 +80,9 @@ describe('Fuzz Tests (Property-Based)', function propertyBasedTests() {
   });
 
   describe('Address Properties', () => {
-    it('addressToString -> stringToAddress roundtrip preserves bytes (20-byte default)', () => {
+    it('addressToString -> stringToAddress roundtrip preserves bytes (64-byte canonical)', () => {
       fc.assert(
-        fc.property(fc.uint8Array({ minLength: 20, maxLength: 20 }), (addrBytes) => {
+        fc.property(fc.uint8Array({ minLength: 64, maxLength: 64 }), (addrBytes) => {
           const str = addressToString(addrBytes);
           const recovered = stringToAddress(str);
           return recovered.length === addrBytes.length && recovered.every((b, i) => b === addrBytes[i]);
@@ -91,20 +91,9 @@ describe('Fuzz Tests (Property-Based)', function propertyBasedTests() {
       );
     });
 
-    it('addressToString -> stringToAddress roundtrip preserves bytes (48-byte Cat 5)', () => {
+    it('canonical 64-byte address strings are recognized as valid', () => {
       fc.assert(
-        fc.property(fc.uint8Array({ minLength: 48, maxLength: 48 }), (addrBytes) => {
-          const str = addressToString(addrBytes);
-          const recovered = stringToAddress(str);
-          return recovered.length === addrBytes.length && recovered.every((b, i) => b === addrBytes[i]);
-        }),
-        { numRuns: 100 }
-      );
-    });
-
-    it('valid address strings of any positive length are recognized as valid', () => {
-      fc.assert(
-        fc.property(fc.uint8Array({ minLength: 1, maxLength: 64 }), (addrBytes) => {
+        fc.property(fc.uint8Array({ minLength: 64, maxLength: 64 }), (addrBytes) => {
           const str = addressToString(addrBytes);
           return isValidAddress(str) === true;
         }),
