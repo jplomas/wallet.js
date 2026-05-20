@@ -74,10 +74,23 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node.js
+        # Pinned to 22.14.0 to match the bundled npm version that can cleanly
+        # self-update to npm@^11.5.1 in the next step. Newer Node 22.x patches
+        # ship an npm where the global self-install corrupts its own
+        # node_modules (missing promise-retry).
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version: '22.x'
+          node-version: 22.14.0
           registry-url: 'https://registry.npmjs.org/'
+
+      - name: Use npm 11 for trusted publishing
+        # npm trusted publishing requires npm >= 11.5.1. The OIDC token from
+        # `id-token: write` is detected automatically by newer npm; no
+        # NPM_TOKEN / NODE_AUTH_TOKEN is needed at all. The package's npm
+        # registry settings must list this workflow as a trusted publisher.
+        run: |
+          npm install -g npm@^11.5.1
+          npm --version
 
       - name: Install dependencies
         run: |
@@ -93,7 +106,7 @@ jobs:
           echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
       - name: Setup SSH Agent
-        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
+        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
         with:
           ssh-private-key: ${{ secrets.BYPASS_SSH_KEY }}
 
@@ -133,18 +146,25 @@ jobs:
             echo "version=$OLD_VERSION" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Publish to npm with provenance
+      - name: Publish to npm with provenance (trusted publishing)
         if: steps.check-release.outputs.released == 'true'
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           VERSION: ${{ steps.check-release.outputs.version }}
-        # npm registry occasionally returns 404 on the publish PUT response
-        # even though the package write succeeded server-side (CDN/replication
-        # false negative). On non-zero exit, verify whether the version landed
-        # before failing the job.
+          NPM_CONFIG_PROVENANCE: 'true'
+          NPM_CONFIG_ACCESS: public
+        # No NPM_TOKEN / NODE_AUTH_TOKEN — npm picks up the GitHub Actions
+        # OIDC token (`id-token: write` permission above) and exchanges it
+        # with the npm registry, provided this workflow is configured as a
+        # trusted publisher on the @theqrl/wallet.js package (npm.com →
+        # package settings → trusted publishers).
+        #
+        # The npm registry occasionally returns 404 on the publish PUT
+        # response even though the package write succeeded server-side
+        # (CDN/replication false negative). On non-zero exit, verify
+        # whether the version landed before failing the job.
         run: |
           set +e
-          npm publish --provenance --access public
+          npm publish
           code=$?
           set -e
           if [ "$code" -ne 0 ]; then

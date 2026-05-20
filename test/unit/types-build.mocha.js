@@ -101,9 +101,14 @@ describe('generated .d.ts sanity', function () {
     const outDir = mkdtempSync(path.join(tmpdir(), 'walletjs-types-'));
     try {
       // 1. Generate declarations from src/ into outDir.
+      // `--ignoreConfig` opts out of the project's tsconfig.json so the
+      // file-list arguments below are honored. TypeScript 6 made the
+      // "files on CLI + tsconfig present" combination an error (it was
+      // silently a tsconfig skip in 5.x).
       await exec(
         TSC,
         [
+          '--ignoreConfig',
           '--allowJs',
           '--declaration',
           '--emitDeclarationOnly',
