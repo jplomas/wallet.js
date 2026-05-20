@@ -9,34 +9,13 @@
 const DESCRIPTOR_SIZE = 3;
 
 /**
- * @type {number} Address length in bytes for NIST Category 1 post-quantum
- * security (the default used in wallet.js 2.x). 20 bytes produces a
- * `Q` + 40 hex-character address string.
+ * @type {number} QRL address length in bytes. 64 bytes (512 bits)
+ * exceeds NIST Category 5 collision targets and produces a `Q` + 128
+ * hex-character address string. Matches go-qrllib's `AddressSize` and
+ * rust-qrllib's `ADDRESS_SIZE` constants — one canonical size across
+ * implementations.
  */
-const ADDRESS_SIZE_CATEGORY_1 = 20;
-
-/**
- * @type {number} Address length in bytes for NIST Category 5 post-quantum
- * security (the 3.0 value). 48 bytes produces a `Q` + 96 hex-character
- * address string.
- */
-const ADDRESS_SIZE_CATEGORY_5 = 48;
-
-/**
- * @type {number} Default address length in bytes.
- * Defaults to {@link ADDRESS_SIZE_CATEGORY_1} (20 bytes) to preserve the
- * wallet.js 2.x API contract: callers that do not specify an address size
- * get the historical value. Opt in to larger sizes via the `addressSize`
- * parameter on address helpers and `Wallet` factory methods.
- */
-const DEFAULT_ADDRESS_SIZE = ADDRESS_SIZE_CATEGORY_1;
-
-/**
- * @type {number} Backwards-compatible alias for {@link DEFAULT_ADDRESS_SIZE}.
- * @deprecated Prefer {@link DEFAULT_ADDRESS_SIZE}, {@link ADDRESS_SIZE_CATEGORY_1},
- * or {@link ADDRESS_SIZE_CATEGORY_5} depending on intent.
- */
-const ADDRESS_SIZE = DEFAULT_ADDRESS_SIZE;
+const ADDRESS_SIZE = 64;
 
 /** @type {number} Seed length in bytes */
 const SEED_SIZE = 48;
@@ -2035,31 +2014,31 @@ function cryptoSignVerify(sig, m, pk, ctx) {
  * @module wallet/common/address
  *
  * Address Format:
- *   - String form: "Q" prefix followed by 2 × addressSize lowercase hex characters.
- *     At the default size (20 bytes, NIST Category 1) this is a 41-character
- *     string. At {@link ADDRESS_SIZE_CATEGORY_5} (48 bytes, NIST Category 5)
- *     this is a 97-character string.
- *   - Byte form: `addressSize`-byte SHAKE-256 hash of (descriptor || public key)
+ *   - Byte form: `ADDRESS_SIZE`-byte SHAKE-256 hash of (descriptor || public key).
+ *   - String form: "Q" prefix followed by `2 × ADDRESS_SIZE` lowercase hex
+ *     characters. At the canonical 64-byte size this is a 129-character string.
  *   - Output is always lowercase hex; input parsing is case-insensitive for both
- *     the "Q"/"q" prefix and hex characters
- *   - Unlike EIP-55, no checksum encoding is used in the address itself
- *   - The address helpers are length-agnostic: `addressToString`,
- *     `stringToAddress`, and `isValidAddress` accept any (positive, even)
- *     byte length so that 20-byte and 48-byte (and future) addresses can
- *     coexist. `getAddressFromPKAndDescriptor` accepts an explicit
- *     `addressSize` (default: {@link DEFAULT_ADDRESS_SIZE}).
+ *     the "Q"/"q" prefix and hex characters.
+ *   - Unlike EIP-55, no checksum encoding is used in the address itself.
+ *   - All helpers (`addressToString`, `stringToAddress`, `isValidAddress`,
+ *     `getAddressFromPKAndDescriptor`) operate at the single canonical
+ *     {@link ADDRESS_SIZE}; addresses of other sizes are rejected. This
+ *     matches go-qrllib (`AddressSize`) and rust-qrllib (`ADDRESS_SIZE`).
  */
 
 
 /**
  * Convert address bytes to string form.
- * @param {Uint8Array} addrBytes
+ * @param {Uint8Array} addrBytes - Exactly {@link ADDRESS_SIZE} bytes.
  * @returns {string}
- * @throws {Error} If input is not a non-empty Uint8Array.
+ * @throws {Error} If input is not a Uint8Array of exactly ADDRESS_SIZE bytes.
  */
 function addressToString(addrBytes) {
-  if (!(addrBytes instanceof Uint8Array) || addrBytes.length === 0) {
-    throw new Error('address must be a non-empty Uint8Array');
+  if (!(addrBytes instanceof Uint8Array)) {
+    throw new Error('address must be a Uint8Array');
+  }
+  if (addrBytes.length !== ADDRESS_SIZE) {
+    throw new Error(`address must be exactly ${ADDRESS_SIZE} bytes, got ${addrBytes.length}`);
   }
   const hex = [...addrBytes].map((b) => b.toString(16).padStart(2, '0')).join('');
   return `Q${hex}`;
@@ -2067,11 +2046,9 @@ function addressToString(addrBytes) {
 
 /**
  * Convert address string to bytes.
- * @param {string} addrStr - Address string starting with 'Q' followed by an
- *   even number of hex characters (2 per byte). Length is implied by the
- *   string — 40 hex chars for a 20-byte address, 96 hex chars for a 48-byte
- *   address, etc.
- * @returns {Uint8Array} Decoded address bytes.
+ * @param {string} addrStr - Address string: 'Q' followed by exactly
+ *   `2 × ADDRESS_SIZE` (= 128) hex characters.
+ * @returns {Uint8Array} Decoded ADDRESS_SIZE-byte address.
  * @throws {Error} If address format is invalid.
  */
 function stringToAddress(addrStr) {
@@ -2083,13 +2060,14 @@ function stringToAddress(addrStr) {
     throw new Error('address must start with Q');
   }
   const hex = trimmed.slice(1);
-  if (hex.length === 0 || hex.length % 2 !== 0) {
-    throw new Error(`address must be Q + a non-empty even number of hex characters, got ${hex.length}`);
+  const expectedHexLen = ADDRESS_SIZE * 2;
+  if (hex.length !== expectedHexLen) {
+    throw new Error(`address must be Q + exactly ${expectedHexLen} hex characters, got ${hex.length}`);
   }
   if (!/^[0-9a-fA-F]+$/.test(hex)) {
     throw new Error('address contains invalid characters');
   }
-  const bytes = new Uint8Array(hex.length / 2);
+  const bytes = new Uint8Array(ADDRESS_SIZE);
   for (let i = 0; i < bytes.length; i += 1) {
     bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
   }
@@ -2097,10 +2075,10 @@ function stringToAddress(addrStr) {
 }
 
 /**
- * Check if a string is a valid QRL address format (structure only).
- * Accepts any `Q`-prefixed even-length hex string — this lets 20-byte and
- * 48-byte addresses coexist. QRL addresses contain no checksum; applications
- * should add their own confirmation or checksum layer.
+ * Check if a string is a valid QRL address format. Requires exactly
+ * `Q` + `2 × ADDRESS_SIZE` hex characters. QRL addresses contain no
+ * checksum; applications should add their own confirmation or checksum
+ * layer.
  * @param {string} addrStr - Address string to validate.
  * @returns {boolean} True if valid address format.
  */
@@ -2115,19 +2093,13 @@ function isValidAddress(addrStr) {
 
 /**
  * Derive an address from a public key and descriptor.
- * @param {Uint8Array} pk
+ * @param {Uint8Array} pk - Public key for the wallet type encoded in the descriptor.
  * @param {Descriptor} descriptor
- * @param {number} [addressSize=DEFAULT_ADDRESS_SIZE] Address length in bytes.
- *   Defaults to 20 (NIST Category 1 — the wallet.js 2.x contract). Pass
- *   `ADDRESS_SIZE_CATEGORY_5` (48) for NIST Category 5.
- * @returns {Uint8Array} `addressSize`-byte address.
- * @throws {Error} If pk length mismatch or addressSize is not a positive integer.
+ * @returns {Uint8Array} {@link ADDRESS_SIZE}-byte address.
+ * @throws {Error} If pk is not a Uint8Array of the expected length.
  */
-function getAddressFromPKAndDescriptor(pk, descriptor, addressSize = DEFAULT_ADDRESS_SIZE) {
+function getAddressFromPKAndDescriptor(pk, descriptor) {
   if (!(pk instanceof Uint8Array)) throw new Error('pk must be Uint8Array');
-  if (!Number.isInteger(addressSize) || addressSize <= 0) {
-    throw new Error('addressSize must be a positive integer');
-  }
 
   const walletType = descriptor.type();
   let expectedPKLen;
@@ -2143,7 +2115,7 @@ function getAddressFromPKAndDescriptor(pk, descriptor, addressSize = DEFAULT_ADD
   const input = new Uint8Array(descBytes.length + pk.length);
   input.set(descBytes, 0);
   input.set(pk, descBytes.length);
-  return shake256.create({ dkLen: addressSize }).update(input).digest();
+  return shake256.create({ dkLen: ADDRESS_SIZE }).update(input).digest();
 }
 
 /**
@@ -7180,24 +7152,13 @@ const SECRET_FIELDS = ['seed', 'sk', 'extendedSeed', '_zeroized'];
 
 class Wallet {
   /**
-   * @param {{descriptor: Descriptor, seed: Seed, pk: Uint8Array, sk: Uint8Array, addressSize?: number}} opts
+   * @param {{descriptor: Descriptor, seed: Seed, pk: Uint8Array, sk: Uint8Array}} opts
    */
-  constructor({ descriptor, seed, pk, sk, addressSize = DEFAULT_ADDRESS_SIZE }) {
-    if (!Number.isInteger(addressSize) || addressSize <= 0) {
-      throw new Error('addressSize must be a positive integer');
-    }
+  constructor({ descriptor, seed, pk, sk }) {
     this.descriptor = descriptor;
     this.seed = seed;
     this.pk = pk;
     this.sk = sk;
-    /**
-     * Address length in bytes this wallet derives. Defaults to
-     * {@link DEFAULT_ADDRESS_SIZE} (20, NIST Category 1 — v2.x contract);
-     * pass `addressSize: ADDRESS_SIZE_CATEGORY_5` (48) on construction to
-     * get NIST Category 5 post-quantum collision resistance.
-     * @type {number}
-     */
-    this.addressSize = addressSize;
     this.extendedSeed = ExtendedSeed.newExtendedSeed(descriptor, seed);
     /** @private */
     this._zeroized = false;
@@ -7207,18 +7168,17 @@ class Wallet {
   }
 
   /**
-   * Create a new random wallet(non-deterministic).
-   * @param {[number, number]} [metadata=[0,0] ]
-   * @param {number} [addressSize=DEFAULT_ADDRESS_SIZE] Address length in bytes.
+   * Create a new random wallet (non-deterministic).
+   * @param {[number, number]} [metadata=[0,0]]
    * @returns {Wallet}
    */
-  static newWallet(metadata = [0, 0], addressSize = DEFAULT_ADDRESS_SIZE) {
+  static newWallet(metadata = [0, 0]) {
     const descriptor = newMLDSA87Descriptor(metadata);
     const seedBytes = randomBytes(48);
     try {
       const seed = new Seed(seedBytes);
       const { pk, sk } = keygen(seed);
-      return new Wallet({ descriptor, seed, pk, sk, addressSize });
+      return new Wallet({ descriptor, seed, pk, sk });
     } finally {
       seedBytes.fill(0);
     }
@@ -7227,37 +7187,34 @@ class Wallet {
   /**
    * @param {Seed} seed
    * @param {[number, number]} [metadata=[0,0]]
-   * @param {number} [addressSize=DEFAULT_ADDRESS_SIZE] Address length in bytes.
    * @returns {Wallet}
    */
-  static newWalletFromSeed(seed, metadata = [0, 0], addressSize = DEFAULT_ADDRESS_SIZE) {
+  static newWalletFromSeed(seed, metadata = [0, 0]) {
     const descriptor = newMLDSA87Descriptor(metadata);
     const { pk, sk } = keygen(seed);
-    return new Wallet({ descriptor, seed, pk, sk, addressSize });
+    return new Wallet({ descriptor, seed, pk, sk });
   }
 
   /**
    * @param {ExtendedSeed} extendedSeed
-   * @param {number} [addressSize=DEFAULT_ADDRESS_SIZE] Address length in bytes.
    * @returns {Wallet}
    */
-  static newWalletFromExtendedSeed(extendedSeed, addressSize = DEFAULT_ADDRESS_SIZE) {
+  static newWalletFromExtendedSeed(extendedSeed) {
     const descriptor = extendedSeed.getDescriptor();
     const seed = extendedSeed.getSeed();
     const { pk, sk } = keygen(seed);
-    return new Wallet({ descriptor, seed, pk, sk, addressSize });
+    return new Wallet({ descriptor, seed, pk, sk });
   }
 
   /**
    * @param {string} mnemonic
-   * @param {number} [addressSize=DEFAULT_ADDRESS_SIZE] Address length in bytes.
    * @returns {Wallet}
    */
-  static newWalletFromMnemonic(mnemonic, addressSize = DEFAULT_ADDRESS_SIZE) {
+  static newWalletFromMnemonic(mnemonic) {
     const bin = mnemonicToBin(mnemonic);
     try {
       const extendedSeed = new ExtendedSeed(bin);
-      return this.newWalletFromExtendedSeed(extendedSeed, addressSize);
+      return this.newWalletFromExtendedSeed(extendedSeed);
     } finally {
       bin.fill(0);
     }
@@ -7265,7 +7222,7 @@ class Wallet {
 
   /** @returns {Uint8Array} */
   getAddress() {
-    return getAddressFromPKAndDescriptor(this.pk, this.descriptor, this.addressSize);
+    return getAddressFromPKAndDescriptor(this.pk, this.descriptor);
   }
 
   /** @returns {string} */
@@ -7518,13 +7475,10 @@ class Wallet {
  * Construct a wallet from an ExtendedSeed by auto-selecting the correct implementation.
  *
  * @param {ExtendedSeed|Uint8Array|string} extendedSeed - ExtendedSeed instance, 51 bytes or hex string.
- * @param {number} [addressSize] Address length in bytes. Defaults to the
- *   wallet implementation's default (currently 20 bytes — NIST Category 1,
- *   the wallet.js 2.x contract). Pass 48 for NIST Category 5.
  * @returns {MLDSA87} Wallet instance
  * @throws {Error} If wallet type is unsupported
  */
-function newWalletFromExtendedSeed(extendedSeed, addressSize) {
+function newWalletFromExtendedSeed(extendedSeed) {
   let ext;
   if (extendedSeed instanceof Uint8Array || isHexLike(extendedSeed)) {
     ext = ExtendedSeed.from(extendedSeed);
@@ -7537,7 +7491,7 @@ function newWalletFromExtendedSeed(extendedSeed, addressSize) {
   const desc = ext.getDescriptor();
   switch (desc.type()) {
     case WalletType.ML_DSA_87:
-      return Wallet.newWalletFromExtendedSeed(ext, addressSize);
+      return Wallet.newWalletFromExtendedSeed(ext);
     // case WalletType.SPHINCSPLUS_256S:
     //   Not yet implemented - reserved for future use
     /* c8 ignore next 2 */
@@ -7547,9 +7501,6 @@ function newWalletFromExtendedSeed(extendedSeed, addressSize) {
 }
 
 exports.ADDRESS_SIZE = ADDRESS_SIZE;
-exports.ADDRESS_SIZE_CATEGORY_1 = ADDRESS_SIZE_CATEGORY_1;
-exports.ADDRESS_SIZE_CATEGORY_5 = ADDRESS_SIZE_CATEGORY_5;
-exports.DEFAULT_ADDRESS_SIZE = DEFAULT_ADDRESS_SIZE;
 exports.DESCRIPTOR_SIZE = DESCRIPTOR_SIZE;
 exports.Descriptor = Descriptor;
 exports.EXTENDED_SEED_SIZE = EXTENDED_SEED_SIZE;
