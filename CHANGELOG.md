@@ -1,3 +1,10 @@
+## [6.0.1](https://github.com/theQRL/wallet.js/compare/v6.0.0...v6.0.1) (2026-05-20)
+
+### Bug Fixes
+
+* mldsa87 module version bump ([8160fce](https://github.com/theQRL/wallet.js/commit/8160fcefe5ed74a0d779d9cd6727295d2a8f0cfd))
+* types, deps & ci action bumps ([be7f36f](https://github.com/theQRL/wallet.js/commit/be7f36fbb66c7f56fd16570b8bc8df4e7eb6ace9))
+
 ## [6.0.0](https://github.com/theQRL/wallet.js/compare/v5.1.0...v6.0.0) (2026-05-20)
 
 ### ⚠ BREAKING CHANGES
