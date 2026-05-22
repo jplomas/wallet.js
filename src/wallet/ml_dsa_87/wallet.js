@@ -98,7 +98,11 @@ class Wallet {
     return getAddressFromPKAndDescriptor(this.pk, this.descriptor);
   }
 
-  /** @returns {string} */
+  /**
+   * @returns {string} Address with `Q` prefix and lowercase hex body. Pass
+   *   through `toChecksumAddress` to obtain the EIP-55-style mixed-case
+   *   checksummed form.
+   */
   getAddressStr() {
     return addressToString(this.getAddress());
   }

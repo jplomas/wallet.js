@@ -8,7 +8,9 @@ import {
   getAddressFromPKAndDescriptor,
   stringToAddress,
   isValidAddress,
+  isValidChecksumAddress,
   addressToString,
+  toChecksumAddress,
 } from './wallet/common/address.js';
 import { ExtendedSeed, Seed } from './wallet/common/seed.js';
 import {
@@ -40,6 +42,8 @@ export {
   addressToString,
   stringToAddress,
   isValidAddress,
+  isValidChecksumAddress,
+  toChecksumAddress,
   WalletType,
   newWalletFromExtendedSeed,
   MLDSA87,

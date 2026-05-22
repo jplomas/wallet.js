@@ -84,7 +84,11 @@ export class Wallet {
     private _zeroized;
     /** @returns {Uint8Array} */
     getAddress(): Uint8Array;
-    /** @returns {string} */
+    /**
+     * @returns {string} Address with `Q` prefix and lowercase hex body. Pass
+     *   through `toChecksumAddress` to obtain the EIP-55-style mixed-case
+     *   checksummed form.
+     */
     getAddressStr(): string;
     /** @returns {Descriptor} */
     getDescriptor(): Descriptor;

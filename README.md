@@ -100,7 +100,7 @@ const wallet = newWalletFromExtendedSeed('0x01000000...'); // 51-byte hex
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `getAddressStr()` | `string` | Address with Q prefix (e.g., `Qabc123...`), 129 chars total |
+| `getAddressStr()` | `string` | Address with Q prefix (e.g., `Qabc123...`), 129 chars total, lowercase hex. Pass through `toChecksumAddress` to get the EIP-55-style mixed-case form |
 | `getAddress()` | `Uint8Array` | Raw address bytes (64 bytes, see `ADDRESS_SIZE`) |
 | `getMnemonic()` | `string` | 34-word mnemonic phrase |
 | `getPK()` | `Uint8Array` | Public key (2,592 bytes) |
@@ -136,30 +136,52 @@ Bumping `SIGNING_CONTEXT_VERSION` is a hard break of the signature wire format: 
 
 ### Address Utilities
 
-**Address Format:** `Q` prefix followed by exactly 128 lowercase hex characters (64-byte address, NIST Category 5). The 64-byte size matches go-qrllib's `AddressSize` and rust-qrllib's `ADDRESS_SIZE` — there is one canonical address size across all QRL implementations.
+**Address Format:** `Q` prefix followed by exactly 128 hex characters (64-byte address, NIST Category 5). The 64-byte size matches go-qrllib's `AddressSize` and rust-qrllib's `ADDRESS_SIZE` — there is one canonical address size across all QRL implementations.
 
-- Output is always lowercase; input parsing is case-insensitive
-- `addressToString`, `stringToAddress`, and `isValidAddress` enforce the exact 64-byte (128-hex-char) length and reject anything else
-- No checksum encoding (unlike EIP-55) — `isValidAddress()` checks format only, not correctness. A single mistyped character will produce a valid but unrelated address. Applications should implement their own checksum or confirmation UX to guard against transcription errors. See [SECURITY.md](SECURITY.md#address-security) for recommendations.
+- `addressToString` emits lowercase hex; `toChecksumAddress` emits the EIP-55-style mixed-case checksummed form
+- The `Q` prefix is always uppercase on output; input parsing accepts `Q` or `q`
+- `addressToString`, `stringToAddress`, `toChecksumAddress`, `isValidAddress`, and `isValidChecksumAddress` enforce the exact 64-byte (128-hex-char) length and reject anything else
+
+#### EIP-55-style checksum
+
+`stringToAddress` and `isValidAddress` accept three encodings of the same address:
+
+1. all-lowercase hex (legacy / case-uniform),
+2. all-uppercase hex (legacy / case-uniform), and
+3. mixed-case hex that satisfies the checksum.
+
+Mixed-case strings whose case does **not** match the checksum are rejected, mirroring how Ethereum tooling treats EIP-55 addresses. This means a single mistyped character in a checksummed address is detected on parse.
+
+The scheme follows EIP-55 with one substitution: the hash is **SHAKE-256** of the UTF-8 bytes of the 128-character lowercase hex (no `Q` prefix), with `dkLen = ADDRESS_SIZE`, giving exactly one hash nibble per hex character. For each hex character, if it is a letter (`a`-`f`) and the corresponding nibble is ≥ 8, it is uppercased; otherwise it stays lowercase. The `Q` prefix is not part of the checksum input.
+
+`isValidChecksumAddress` is **strict**: it returns `true` only when the input exactly matches the canonical checksummed form produced by `toChecksumAddress` (uppercase `Q`, hex body case-for-case identical). All-lowercase and all-uppercase forms that contain letters return `false`. Use it for "did the caller paste a checksummed address?" — and use `isValidAddress` for the permissive parse check.
 
 ```javascript
 import {
   addressToString,
   stringToAddress,
-  isValidAddress
+  toChecksumAddress,
+  isValidAddress,
+  isValidChecksumAddress,
 } from '@theqrl/wallet.js';
 
-// Convert bytes to string
+// Convert bytes to string (lowercase)
 const addrStr = addressToString(addressBytes); // 'Qabc...'
 
-// Convert string to bytes (case-insensitive)
-const addrBytes = stringToAddress('Qabc123...');
-const same = stringToAddress('QABC123...');  // Also valid
+// Convert bytes (or any case-form string) to the checksummed mixed-case form
+const checksummed = toChecksumAddress(addressBytes); // 'QAbC...' (mixed case)
 
-// Validate address format (structure only — no checksum)
-if (isValidAddress(userInput)) {
-  // Format is valid, but confirm with the user before transacting
-}
+// Parse: accepts lowercase, uppercase, or correctly-checksummed mixed case
+const a = stringToAddress('Qabc...');         // ok
+const b = stringToAddress('QABC...');         // ok
+const c = stringToAddress(checksummed);       // ok
+// stringToAddress('QAbc...')                  // throws if checksum is wrong
+
+// Permissive check (accepts any of the three forms above)
+if (isValidAddress(userInput)) { /* ... */ }
+
+// Strict check (only true for the canonical checksummed form)
+if (isValidChecksumAddress(userInput)) { /* ... */ }
 ```
 
 ### Seeds and Descriptors
@@ -192,8 +214,8 @@ See [SECURITY.md](SECURITY.md) for the security model and best practices.
 **Important:**
 - Always call `wallet.zeroize()` when done
 - Never log or transmit mnemonics/seeds
-- Neither mnemonics nor addresses include a built-in checksum — application-layer verification is recommended (see [SECURITY.md](SECURITY.md) for details)
-- Validate addresses with `isValidAddress()` before use (format check only)
+- Mnemonics do not include a built-in checksum — application-layer verification is recommended (see [SECURITY.md](SECURITY.md) for details)
+- Validate addresses with `isValidAddress()` before use (accepts uniform-case and checksummed forms), or with `isValidChecksumAddress()` to require an EIP-55-style checksummed address
 
 ## Browser Usage
 
