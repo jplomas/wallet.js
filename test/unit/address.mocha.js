@@ -130,7 +130,7 @@ describe('wallet/common/address', () => {
           break;
         }
       }
-      expect(flipIdx).to.be.greaterThan(-1, 'fixture must contain at least one hex letter');
+      expect(flipIdx).to.not.equal(-1,'fixture must contain at least one hex letter');
       const flipped =
         hex[flipIdx] === hex[flipIdx].toLowerCase() ? hex[flipIdx].toUpperCase() : hex[flipIdx].toLowerCase();
       const bad = `Q${hex.slice(0, flipIdx)}${flipped}${hex.slice(flipIdx + 1)}`;
@@ -162,7 +162,7 @@ describe('wallet/common/address', () => {
           break;
         }
       }
-      expect(badIdx).to.be.greaterThan(-1, 'fixture must have a lowercase-by-checksum letter');
+      expect(badIdx).to.not.equal(-1,'fixture must have a lowercase-by-checksum letter');
       const corrupted = `Q${lowerHex.slice(0, badIdx)}${lowerHex[badIdx].toUpperCase()}${lowerHex.slice(badIdx + 1)}`;
       expect(() => stringToAddress(corrupted)).to.throw('invalid EIP-55 checksum');
       expect(isValidAddress(corrupted)).to.equal(false);
