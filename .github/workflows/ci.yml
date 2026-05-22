@@ -48,7 +48,7 @@ jobs:
       - run: npm test
 
   dist-check:
-    name: Verify dist/ is up to date
+    name: Verify dist/ and types/ are up to date
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -59,12 +59,19 @@ jobs:
         with:
           node-version: '22.x'
       - run: npm ci
+      # Wipe both build-output trees first so the post-build `git status` check
+      # catches three failure modes: (1) modifications to regenerated files,
+      # (2) tracked files that are no longer generated (orphans), and (3)
+      # newly-generated files not yet committed.
+      - name: Clean build outputs
+        run: rm -rf dist types
       - run: npm run build
-      - name: Check for uncommitted dist changes
+      - name: Check for uncommitted dist/ or types/ changes
         run: |
-          if [ -n "$(git diff --name-only dist/)" ]; then
-            echo "::error::dist/ files are out of date. Run 'npm run build' and commit the result."
-            git diff --stat dist/
+          if [ -n "$(git status --porcelain dist/ types/)" ]; then
+            echo "::error::dist/ or types/ out of date. Run 'npm run build' and commit."
+            git status --short dist/ types/
+            git --no-pager diff -- dist/ types/ | head -200
             exit 1
           fi
 

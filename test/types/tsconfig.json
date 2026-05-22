@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "lib": ["ES2020", "DOM"],
+    "paths": {
+      "@theqrl/wallet.js": ["../../types/index.d.ts"]
+    },
+    "types": []
+  },
+  "include": ["consumer.ts"]
+}

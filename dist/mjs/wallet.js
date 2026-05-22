@@ -32,20 +32,72 @@ const EXTENDED_SEED_SIZE = DESCRIPTOR_SIZE + SEED_SIZE;
  *
  * Address Format:
  *   - Byte form: `ADDRESS_SIZE`-byte SHAKE-256 hash of (descriptor || public key).
- *   - String form: "Q" prefix followed by `2 × ADDRESS_SIZE` lowercase hex
+ *   - String form: "Q" prefix followed by `2 × ADDRESS_SIZE` hex
  *     characters. At the canonical 64-byte size this is a 129-character string.
- *   - Output is always lowercase hex; input parsing is case-insensitive for both
- *     the "Q"/"q" prefix and hex characters.
- *   - Unlike EIP-55, no checksum encoding is used in the address itself.
- *   - All helpers (`addressToString`, `stringToAddress`, `isValidAddress`,
- *     `getAddressFromPKAndDescriptor`) operate at the single canonical
- *     {@link ADDRESS_SIZE}; addresses of other sizes are rejected. This
- *     matches go-qrllib (`AddressSize`) and rust-qrllib (`ADDRESS_SIZE`).
+ *   - `addressToString` emits lowercase hex; `toChecksumAddress` emits the
+ *     EIP-55-style mixed-case checksummed form. The `Q` prefix is always
+ *     uppercase on output; input parsing accepts `Q` or `q`.
+ *
+ * EIP-55 Checksum (QRL variant):
+ *   - Hash: SHAKE-256 of the UTF-8 bytes of the 128-character lowercase hex
+ *     (no `Q` prefix), with dkLen = `ADDRESS_SIZE`, giving exactly one nibble
+ *     per hex character.
+ *   - For each hex character: if it is a letter (`a`-`f`) and the
+ *     corresponding nibble of the hash is ≥ 8, uppercase it; otherwise leave
+ *     it lowercase.
+ *   - `stringToAddress` / `isValidAddress` accept all-lowercase and
+ *     all-uppercase hex unchanged (legacy / case-uniform forms). Mixed-case
+ *     hex must match the checksum exactly, otherwise the address is
+ *     rejected. This mirrors EIP-55 semantics.
+ *
+ * All helpers operate at the single canonical {@link ADDRESS_SIZE}; addresses
+ * of other sizes are rejected. This matches go-qrllib (`AddressSize`) and
+ * rust-qrllib (`ADDRESS_SIZE`).
  */
 
 
+const HEX_LEN = ADDRESS_SIZE * 2;
+const HEX_REGEX = /^[0-9a-fA-F]+$/;
+
+function bytesToLowerHex(bytes) {
+  let hex = '';
+  for (let i = 0; i < bytes.length; i += 1) {
+    hex += bytes[i].toString(16).padStart(2, '0');
+  }
+  return hex;
+}
+
 /**
- * Convert address bytes to string form.
+ * Compute the EIP-55-style mixed-case form of a lowercase hex string.
+ * Internal helper; assumes `lowerHex` is exactly `HEX_LEN` lowercase hex
+ * characters.
+ * @param {string} lowerHex
+ * @returns {string}
+ */
+function checksummedHex(lowerHex) {
+  const input = new Uint8Array(lowerHex.length);
+  for (let i = 0; i < lowerHex.length; i += 1) {
+    input[i] = lowerHex.charCodeAt(i);
+  }
+  const hash = shake256.create({ dkLen: ADDRESS_SIZE }).update(input).digest();
+  let out = '';
+  for (let i = 0; i < lowerHex.length; i += 1) {
+    const ch = lowerHex.charCodeAt(i);
+    // letters a..f are 0x61..0x66; digits 0..9 are 0x30..0x39
+    if (ch >= 0x61 && ch <= 0x66) {
+      const nibble = (i & 1) === 0 ? hash[i >> 1] >> 4 : hash[i >> 1] & 0x0f;
+      if (nibble >= 8) {
+        out += lowerHex[i].toUpperCase();
+        continue;
+      }
+    }
+    out += lowerHex[i];
+  }
+  return out;
+}
+
+/**
+ * Convert address bytes to string form (lowercase hex).
  * @param {Uint8Array} addrBytes - Exactly {@link ADDRESS_SIZE} bytes.
  * @returns {string}
  * @throws {Error} If input is not a Uint8Array of exactly ADDRESS_SIZE bytes.
@@ -57,16 +109,54 @@ function addressToString(addrBytes) {
   if (addrBytes.length !== ADDRESS_SIZE) {
     throw new Error(`address must be exactly ${ADDRESS_SIZE} bytes, got ${addrBytes.length}`);
   }
-  const hex = [...addrBytes].map((b) => b.toString(16).padStart(2, '0')).join('');
-  return `Q${hex}`;
+  return `Q${bytesToLowerHex(addrBytes)}`;
+}
+
+/**
+ * Convert an address (bytes or string) to its EIP-55-style mixed-case
+ * checksummed string form. The returned string always uses uppercase `Q`.
+ *
+ * - Uint8Array input: must be exactly {@link ADDRESS_SIZE} bytes.
+ * - String input: parsed via {@link stringToAddress} first, so mixed-case
+ *   inputs must already carry a valid checksum (otherwise the call throws).
+ *   All-lowercase, all-uppercase, and correctly-checksummed inputs are all
+ *   accepted and re-emitted in canonical checksummed form.
+ *
+ * @param {Uint8Array|string} addr
+ * @returns {string} Checksummed address: `Q` + 128 mixed-case hex chars.
+ * @throws {Error} If the input is the wrong type, wrong length, contains
+ *   invalid hex, or is a mixed-case string with a bad checksum.
+ */
+function toChecksumAddress(addr) {
+  let bytes;
+  if (addr instanceof Uint8Array) {
+    if (addr.length !== ADDRESS_SIZE) {
+      throw new Error(`address must be exactly ${ADDRESS_SIZE} bytes, got ${addr.length}`);
+    }
+    bytes = addr;
+  } else if (typeof addr === 'string') {
+    bytes = stringToAddress(addr);
+  } else {
+    throw new Error('address must be a Uint8Array or string');
+  }
+  return `Q${checksummedHex(bytesToLowerHex(bytes))}`;
 }
 
 /**
  * Convert address string to bytes.
- * @param {string} addrStr - Address string: 'Q' followed by exactly
+ *
+ * The `Q` prefix is case-insensitive. The hex body must be one of:
+ *   - all lowercase (case-uniform), OR
+ *   - all uppercase (case-uniform), OR
+ *   - mixed-case matching the EIP-55-style checksum (see module docs).
+ *
+ * Mixed-case strings that do not match the checksum are rejected, mirroring
+ * Ethereum tooling behavior for EIP-55 addresses.
+ *
+ * @param {string} addrStr - Address string: 'Q'/'q' followed by exactly
  *   `2 × ADDRESS_SIZE` (= 128) hex characters.
  * @returns {Uint8Array} Decoded ADDRESS_SIZE-byte address.
- * @throws {Error} If address format is invalid.
+ * @throws {Error} If address format or checksum is invalid.
  */
 function stringToAddress(addrStr) {
   if (typeof addrStr !== 'string') {
@@ -77,27 +167,37 @@ function stringToAddress(addrStr) {
     throw new Error('address must start with Q');
   }
   const hex = trimmed.slice(1);
-  const expectedHexLen = ADDRESS_SIZE * 2;
-  if (hex.length !== expectedHexLen) {
-    throw new Error(`address must be Q + exactly ${expectedHexLen} hex characters, got ${hex.length}`);
+  if (hex.length !== HEX_LEN) {
+    throw new Error(`address must be Q + exactly ${HEX_LEN} hex characters, got ${hex.length}`);
   }
-  if (!/^[0-9a-fA-F]+$/.test(hex)) {
+  if (!HEX_REGEX.test(hex)) {
     throw new Error('address contains invalid characters');
+  }
+  const hexLower = hex.toLowerCase();
+  const hexUpper = hex.toUpperCase();
+  if (hex !== hexLower && hex !== hexUpper) {
+    // Mixed case — must satisfy the EIP-55-style checksum.
+    if (hex !== checksummedHex(hexLower)) {
+      throw new Error('address has invalid EIP-55 checksum');
+    }
   }
   const bytes = new Uint8Array(ADDRESS_SIZE);
   for (let i = 0; i < bytes.length; i += 1) {
-    bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    bytes[i] = parseInt(hexLower.slice(i * 2, i * 2 + 2), 16);
   }
   return bytes;
 }
 
 /**
- * Check if a string is a valid QRL address format. Requires exactly
- * `Q` + `2 × ADDRESS_SIZE` hex characters. QRL addresses contain no
- * checksum; applications should add their own confirmation or checksum
- * layer.
+ * Check if a string is a valid QRL address. Requires exactly `Q`/`q` + `2 ×
+ * ADDRESS_SIZE` hex characters. Mixed-case hex must satisfy the EIP-55-style
+ * checksum; all-lowercase and all-uppercase forms are accepted unconditionally.
+ *
+ * This is a permissive check: it accepts un-checksummed (case-uniform) inputs.
+ * Use {@link isValidChecksumAddress} to require a properly-checksummed string.
+ *
  * @param {string} addrStr - Address string to validate.
- * @returns {boolean} True if valid address format.
+ * @returns {boolean} True if the address parses successfully.
  */
 function isValidAddress(addrStr) {
   try {
@@ -106,6 +206,32 @@ function isValidAddress(addrStr) {
   } catch {
     return false;
   }
+}
+
+/**
+ * Strict check: returns true only when `addrStr` exactly matches the
+ * canonical checksummed form produced by {@link toChecksumAddress}. This
+ * means:
+ *   - The `Q` prefix must be uppercase.
+ *   - The hex body must match the EIP-55-style mixed-case checksum
+ *     character-for-character.
+ *
+ * All-lowercase or all-uppercase addresses that contain letters return
+ * `false` even though they are otherwise valid (use {@link isValidAddress}
+ * for the permissive check). Digit-only hex bodies have no checksum
+ * information and return `true` when the rest of the format is valid.
+ *
+ * @param {string} addrStr - Address string to validate.
+ * @returns {boolean}
+ */
+function isValidChecksumAddress(addrStr) {
+  if (typeof addrStr !== 'string') return false;
+  const trimmed = addrStr.trim();
+  if (!trimmed.startsWith('Q')) return false;
+  const hex = trimmed.slice(1);
+  if (hex.length !== HEX_LEN) return false;
+  if (!HEX_REGEX.test(hex)) return false;
+  return hex === checksummedHex(hex.toLowerCase());
 }
 
 /**
@@ -4993,7 +5119,11 @@ class Wallet {
     return getAddressFromPKAndDescriptor(this.pk, this.descriptor);
   }
 
-  /** @returns {string} */
+  /**
+   * @returns {string} Address with `Q` prefix and lowercase hex body. Pass
+   *   through `toChecksumAddress` to obtain the EIP-55-style mixed-case
+   *   checksummed form.
+   */
   getAddressStr() {
     return addressToString(this.getAddress());
   }
@@ -5268,4 +5398,4 @@ function newWalletFromExtendedSeed(extendedSeed) {
   }
 }
 
-export { ADDRESS_SIZE, DESCRIPTOR_SIZE, Descriptor, EXTENDED_SEED_SIZE, ExtendedSeed, Wallet as MLDSA87, SEED_SIZE, SIGNING_CONTEXT_PREFIX, SIGNING_CONTEXT_SIZE, SIGNING_CONTEXT_VERSION, Seed, WalletType, addressToString, getAddressFromPKAndDescriptor, isValidAddress, newMLDSA87Descriptor, newWalletFromExtendedSeed, signingContext, stringToAddress };
+export { ADDRESS_SIZE, DESCRIPTOR_SIZE, Descriptor, EXTENDED_SEED_SIZE, ExtendedSeed, Wallet as MLDSA87, SEED_SIZE, SIGNING_CONTEXT_PREFIX, SIGNING_CONTEXT_SIZE, SIGNING_CONTEXT_VERSION, Seed, WalletType, addressToString, getAddressFromPKAndDescriptor, isValidAddress, isValidChecksumAddress, newMLDSA87Descriptor, newWalletFromExtendedSeed, signingContext, stringToAddress, toChecksumAddress };

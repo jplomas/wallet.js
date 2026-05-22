@@ -14,8 +14,10 @@ import { getAddressFromPKAndDescriptor } from './wallet/common/address.js';
 import { addressToString } from './wallet/common/address.js';
 import { stringToAddress } from './wallet/common/address.js';
 import { isValidAddress } from './wallet/common/address.js';
+import { isValidChecksumAddress } from './wallet/common/address.js';
+import { toChecksumAddress } from './wallet/common/address.js';
 import { WalletType } from './wallet/common/wallettype.js';
 import { newWalletFromExtendedSeed } from './wallet/factory.js';
 import { Wallet as MLDSA87 } from './wallet/ml_dsa_87/wallet.js';
-export { Seed, SEED_SIZE, ExtendedSeed, EXTENDED_SEED_SIZE, Descriptor, DESCRIPTOR_SIZE, ADDRESS_SIZE, SIGNING_CONTEXT_PREFIX, SIGNING_CONTEXT_SIZE, SIGNING_CONTEXT_VERSION, signingContext, newMLDSA87Descriptor, getAddressFromPKAndDescriptor, addressToString, stringToAddress, isValidAddress, WalletType, newWalletFromExtendedSeed, MLDSA87 };
+export { Seed, SEED_SIZE, ExtendedSeed, EXTENDED_SEED_SIZE, Descriptor, DESCRIPTOR_SIZE, ADDRESS_SIZE, SIGNING_CONTEXT_PREFIX, SIGNING_CONTEXT_SIZE, SIGNING_CONTEXT_VERSION, signingContext, newMLDSA87Descriptor, getAddressFromPKAndDescriptor, addressToString, stringToAddress, isValidAddress, isValidChecksumAddress, toChecksumAddress, WalletType, newWalletFromExtendedSeed, MLDSA87 };
 //# sourceMappingURL=index.d.ts.map

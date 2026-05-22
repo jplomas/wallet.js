@@ -57,9 +57,14 @@ target by 2¹²⁸ classical / matching it at 2¹²⁸ quantum. The address
 never becomes the weakest link in the security chain — the underlying
 ML-DSA-87 signature scheme targets the same Level 5.
 
-Addresses are displayed with a `Q` prefix in lowercase hexadecimal,
-always exactly 129 characters long. Helpers (`addressToString`,
-`stringToAddress`, `isValidAddress`) reject any other length.
+Addresses are displayed with a `Q` prefix followed by 128 hex
+characters (129 characters total). `addressToString` emits lowercase
+hex; `toChecksumAddress` emits the EIP-55-style mixed-case checksummed
+form (see [Address Security](#address-security) below). Helpers
+(`addressToString`, `toChecksumAddress`, `stringToAddress`,
+`isValidAddress`, `isValidChecksumAddress`) reject any other length,
+and `stringToAddress`/`isValidAddress` reject mixed-case input whose
+checksum does not validate.
 
 ---
 
@@ -99,25 +104,35 @@ always exactly 129 characters long. Helpers (`addressToString`,
 
 ## Address Security
 
-### No Built-in Checksum
+### EIP-55-style Checksum
 
-**Important:** QRL addresses do not include a checksum (unlike EIP-55 mixed-case encoding in Ethereum). `isValidAddress()` checks the structural format — `Q` prefix followed by exactly 128 lowercase/uppercase hex characters (the canonical 64-byte address). It cannot detect a mistyped address that still happens to be the right length.
+QRL addresses support an EIP-55-style mixed-case checksum to detect transcription errors. The scheme is identical in spirit to Ethereum's EIP-55, with one substitution: the case-selection nibbles are drawn from **SHAKE-256** of the UTF-8 bytes of the 128-character lowercase hex address (no `Q` prefix), with `dkLen = ADDRESS_SIZE` (64 bytes = 128 nibbles, one per hex character). For each hex character: if it is a letter (`a`-`f`) and the corresponding hash nibble is ≥ 8, it is uppercased; otherwise it stays lowercase. The `Q` prefix is always uppercase on output and is not part of the checksum input.
+
+| Helper | Behavior |
+|--------|----------|
+| `addressToString(bytes)` | Emits lowercase hex (no checksum); kept for backward compatibility. |
+| `toChecksumAddress(addr)` | Emits the canonical checksummed mixed-case form. Accepts `Uint8Array` or a string in any valid form. |
+| `stringToAddress(str)` | Accepts all-lowercase, all-uppercase, or correctly-checksummed mixed-case hex. **Mixed-case input with a bad checksum is rejected.** |
+| `isValidAddress(str)` | Permissive: returns `true` for any string that `stringToAddress` accepts. |
+| `isValidChecksumAddress(str)` | Strict: returns `true` **only** for the canonical checksummed form (uppercase `Q`, hex body case-for-case identical to `toChecksumAddress` output). Lowercase or uppercase forms containing letters return `false`. |
+
+This is a typo-detection layer, not an authentication mechanism. An attacker who controls the address-display path can always show a correctly-checksummed address of their choosing.
 
 **Implications:**
-- Any `Q` + 128 hex character string passes structural validation
-- A single character error produces a valid but unrelated address
-- Funds sent to a mistyped address are unrecoverable
+- A correctly-checksummed string detects single-character case flips with probability ≈ 15/16 per affected letter; a digit substitution is not detected (digits carry no checksum information).
+- Funds sent to a mistyped address remain unrecoverable. The checksum reduces the probability of accidentally sending to one, but does not eliminate it.
+- The all-lowercase form remains a valid encoding for compatibility with older code that stringifies via `addressToString`. Applications that want stronger guarantees should call `isValidChecksumAddress` and require checksummed inputs.
 
 **Recommended Application-Level Mitigations:**
 
-1. **Address Book / Whitelist:**
+1. **Require checksummed addresses from users:**
+   When a user pastes an address, prefer `isValidChecksumAddress` over `isValidAddress`. Refuse, or warn loudly, on uniform-case inputs unless the user has explicitly opted in.
+
+2. **Address Book / Whitelist:**
    Maintain a list of known-good addresses and warn users when sending to an address not in their address book.
 
-2. **Full Address Verification:**
-   Always display the **complete** address and require explicit user confirmation before signing a transaction. Never truncate to first/last characters — address-poisoning and dusting attacks deliberately generate addresses that match a target's prefix and suffix to exploit partial visual checks.
-
-3. **Application-Layer Checksums:**
-   Applications that store or transmit addresses may add their own checksum envelope (e.g. CRC32, Base58Check, or Bech32) to detect transcription errors before submitting a transaction. This is intentionally left to the application layer so that different transports can choose the scheme best suited to their context.
+3. **Full Address Verification:**
+   Always display the **complete** address and require explicit user confirmation before signing a transaction. Never truncate to first/last characters — address-poisoning and dusting attacks deliberately generate addresses that match a target's prefix and suffix to exploit partial visual checks. The EIP-55 checksum does not defend against poisoning, only against transcription typos.
 
 4. **Second-Step Verification:**
    For high-value transactions, implement a secondary confirmation channel (e.g. displaying the address on a separate device, QR code cross-check, or out-of-band confirmation) to guard against clipboard hijacking and address substitution attacks.
@@ -209,7 +224,7 @@ the window in which a live `Wallet` exists.
 | `wallet.sign(message)` | message is Uint8Array |
 | `wallet.signDeterministic(message)` | message is Uint8Array |
 | `MLDSA87.verify(sig, msg, pk, descriptor)` | All inputs are Uint8Array of correct lengths; descriptor is a `Descriptor` instance |
-| `stringToAddress(str)` | Starts with Q, 96 hex characters |
+| `stringToAddress(str)` | Starts with Q/q, 128 hex characters, and (if mixed-case) EIP-55 checksum valid |
 
 ### Error Handling
 

@@ -19,6 +19,8 @@ describe('public API (src/index.js)', () => {
     'addressToString',
     'stringToAddress',
     'isValidAddress',
+    'isValidChecksumAddress',
+    'toChecksumAddress',
     'WalletType',
     'newWalletFromExtendedSeed',
     'MLDSA87',
