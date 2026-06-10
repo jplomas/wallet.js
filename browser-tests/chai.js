@@ -52,7 +52,9 @@ class Assertion {
   }
 
   get not() {
-    return new Assertion(this.actual, !this.negate, this.deep, this.message);
+    // Pass the _deep boolean, not the `deep` getter — the getter returns a
+    // (truthy) Assertion, which silently made every `.not.*` chain deep.
+    return new Assertion(this.actual, !this.negate, this._deep, this.message);
   }
 
   get deep() {
@@ -111,6 +113,26 @@ class Assertion {
 
   a(expectedType, message) {
     return this.an(expectedType, message);
+  }
+
+  get have() {
+    return this;
+  }
+
+  property(name, message) {
+    const condition = this.actual != null && Object.prototype.hasOwnProperty.call(this.actual, name);
+    this._assert(
+      condition,
+      message || `expected value to have property '${name}'`,
+      message || `expected value to not have property '${name}'`
+    );
+    return this;
+  }
+
+  // chai-style property assertion: expect(x).to.be.undefined / .to.not.be.undefined
+  get undefined() {
+    this._assert(this.actual === undefined, 'expected value to be undefined', 'expected value to not be undefined');
+    return this;
   }
 
   match(regex, message) {

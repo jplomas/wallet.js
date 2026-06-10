@@ -83,6 +83,17 @@ class BufferPolyfill extends Uint8Array {
     }
     return bytesToUtf8(this);
   }
+
+  equals(other) {
+    if (!(other instanceof Uint8Array)) {
+      throw new TypeError('The "otherBuffer" argument must be a Uint8Array');
+    }
+    if (this.length !== other.length) return false;
+    for (let i = 0; i < this.length; i += 1) {
+      if (this[i] !== other[i]) return false;
+    }
+    return true;
+  }
 }
 
 BufferPolyfill.isBuffer = (value) => value instanceof BufferPolyfill;
