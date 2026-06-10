@@ -40,10 +40,29 @@ function keygen(seed) {
 /**
  * Check if input is a valid byte array (Uint8Array or Buffer).
  * @param {unknown} input
- * @returns {boolean}
+ * @returns {input is Uint8Array}
  */
 function isBytes(input) {
   return input instanceof Uint8Array;
+}
+
+/**
+ * Build a validation Error carrying a stable, machine-readable `code`.
+ * Callers (e.g. `Wallet.verifyWithReason`) classify failures by `code`;
+ * the human-readable message text is informational and may evolve.
+ *
+ * Codes: `ERR_SK_TYPE`, `ERR_SK_LENGTH`, `ERR_MESSAGE_TYPE`,
+ * `ERR_CTX_TYPE`, `ERR_RANDOMIZED_TYPE`, `ERR_SIGNATURE_TYPE`,
+ * `ERR_SIGNATURE_LENGTH`, `ERR_PK_TYPE`, `ERR_PK_LENGTH`.
+ *
+ * @param {string} code
+ * @param {string} message
+ * @returns {Error & {code: string}}
+ */
+function typedError(code, message) {
+  const err = /** @type {Error & {code: string}} */ (new Error(message));
+  err.code = code;
+  return err;
 }
 
 /**
@@ -82,19 +101,19 @@ function isBytes(input) {
  */
 function sign(sk, message, ctx, randomized = true) {
   if (!isBytes(sk)) {
-    throw new Error('sk must be Uint8Array or Buffer');
+    throw typedError('ERR_SK_TYPE', 'sk must be Uint8Array or Buffer');
   }
   if (sk.length !== CryptoSecretKeyBytes) {
-    throw new Error(`sk must be ${CryptoSecretKeyBytes} bytes, got ${sk.length}`);
+    throw typedError('ERR_SK_LENGTH', `sk must be ${CryptoSecretKeyBytes} bytes, got ${sk.length}`);
   }
   if (!isBytes(message)) {
-    throw new Error('message must be Uint8Array or Buffer');
+    throw typedError('ERR_MESSAGE_TYPE', 'message must be Uint8Array or Buffer');
   }
   if (!isBytes(ctx)) {
-    throw new Error('ctx must be Uint8Array or Buffer');
+    throw typedError('ERR_CTX_TYPE', 'ctx must be Uint8Array or Buffer');
   }
   if (typeof randomized !== 'boolean') {
-    throw new Error('randomized must be a boolean');
+    throw typedError('ERR_RANDOMIZED_TYPE', 'randomized must be a boolean');
   }
 
   const sm = cryptoSign(message, sk, randomized, ctx);
@@ -131,22 +150,22 @@ function signDeterministic(sk, message, ctx) {
  */
 function verify(signature, message, pk, ctx) {
   if (!isBytes(signature)) {
-    throw new Error('signature must be Uint8Array or Buffer');
+    throw typedError('ERR_SIGNATURE_TYPE', 'signature must be Uint8Array or Buffer');
   }
   if (signature.length !== CryptoBytes) {
-    throw new Error(`signature must be ${CryptoBytes} bytes, got ${signature.length}`);
+    throw typedError('ERR_SIGNATURE_LENGTH', `signature must be ${CryptoBytes} bytes, got ${signature.length}`);
   }
   if (!isBytes(message)) {
-    throw new Error('message must be Uint8Array or Buffer');
+    throw typedError('ERR_MESSAGE_TYPE', 'message must be Uint8Array or Buffer');
   }
   if (!isBytes(pk)) {
-    throw new Error('pk must be Uint8Array or Buffer');
+    throw typedError('ERR_PK_TYPE', 'pk must be Uint8Array or Buffer');
   }
   if (pk.length !== CryptoPublicKeyBytes) {
-    throw new Error(`pk must be ${CryptoPublicKeyBytes} bytes, got ${pk.length}`);
+    throw typedError('ERR_PK_LENGTH', `pk must be ${CryptoPublicKeyBytes} bytes, got ${pk.length}`);
   }
   if (!isBytes(ctx)) {
-    throw new Error('ctx must be Uint8Array or Buffer');
+    throw typedError('ERR_CTX_TYPE', 'ctx must be Uint8Array or Buffer');
   }
 
   const sigBytes = new Uint8Array(signature);

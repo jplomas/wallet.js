@@ -7,6 +7,8 @@ import { expect } from 'chai';
 import { utf8ToBytes } from '@noble/hashes/utils.js';
 import { Wallet as MLDSA87 } from '../../src/wallet/ml_dsa_87/wallet.js';
 import { newMLDSA87Descriptor } from '../../src/wallet/ml_dsa_87/descriptor.js';
+import { sign, verify } from '../../src/wallet/ml_dsa_87/crypto.js';
+import { signingContext } from '../../src/wallet/common/context.js';
 import { CryptoBytes, CryptoPublicKeyBytes } from '@theqrl/mldsa87';
 
 describe('Wallet.verifyWithReason (TOB-QRLLIB-14)', () => {
@@ -87,5 +89,47 @@ describe('Wallet.verifyWithReason (TOB-QRLLIB-14)', () => {
     const result = MLDSA87.verifyWithReason(sig, msg, pk, otherDesc);
     expect(result.ok).to.equal(false);
     expect(result.reason).to.equal('verification-failed');
+  });
+
+  describe('lower-layer validation errors carry stable codes', () => {
+    // verifyWithReason classifies by error.code (never message text) —
+    // these lock in the code contract for representative paths.
+    function codeOf(fn) {
+      try {
+        fn();
+      } catch (e) {
+        return e.code;
+      }
+      throw new Error('expected function to throw');
+    }
+
+    it('verify: wrong-length signature throws ERR_SIGNATURE_LENGTH', () => {
+      const ctx = signingContext(desc);
+      expect(codeOf(() => verify(new Uint8Array(CryptoBytes - 1), msg, pk, ctx))).to.equal('ERR_SIGNATURE_LENGTH');
+    });
+
+    it('verify: wrong-length pk throws ERR_PK_LENGTH', () => {
+      const ctx = signingContext(desc);
+      expect(codeOf(() => verify(sig, msg, new Uint8Array(CryptoPublicKeyBytes - 1), ctx))).to.equal('ERR_PK_LENGTH');
+    });
+
+    it('verify: wrong types throw ERR_*_TYPE codes', () => {
+      const ctx = signingContext(desc);
+      expect(codeOf(() => verify('nope', msg, pk, ctx))).to.equal('ERR_SIGNATURE_TYPE');
+      expect(codeOf(() => verify(sig, 'nope', pk, ctx))).to.equal('ERR_MESSAGE_TYPE');
+      expect(codeOf(() => verify(sig, msg, 'nope', ctx))).to.equal('ERR_PK_TYPE');
+      expect(codeOf(() => verify(sig, msg, pk, 'nope'))).to.equal('ERR_CTX_TYPE');
+    });
+
+    it('sign: validation errors carry codes too', () => {
+      const ctx = signingContext(desc);
+      const sk = wallet.getSK();
+      expect(codeOf(() => sign('nope', msg, ctx))).to.equal('ERR_SK_TYPE');
+      expect(codeOf(() => sign(new Uint8Array(3), msg, ctx))).to.equal('ERR_SK_LENGTH');
+      expect(codeOf(() => sign(sk, 'nope', ctx))).to.equal('ERR_MESSAGE_TYPE');
+      expect(codeOf(() => sign(sk, msg, 'nope'))).to.equal('ERR_CTX_TYPE');
+      expect(codeOf(() => sign(sk, msg, ctx, 'nope'))).to.equal('ERR_RANDOMIZED_TYPE');
+      sk.fill(0);
+    });
   });
 });
