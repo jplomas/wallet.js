@@ -72,7 +72,7 @@ class Assertion {
     this._assert(
       condition,
       message || `expected ${String(this.actual)} to equal ${String(expected)}`,
-      message || `expected ${String(this.actual)} to not equal ${String(expected)}`,
+      message || `expected ${String(this.actual)} to not equal ${String(expected)}`
     );
     return this;
   }
@@ -82,7 +82,7 @@ class Assertion {
     this._assert(
       condition,
       message || `expected value to be instance of ${expected && expected.name ? expected.name : 'provided type'}`,
-      message || `expected value to not be instance of ${expected && expected.name ? expected.name : 'provided type'}`,
+      message || `expected value to not be instance of ${expected && expected.name ? expected.name : 'provided type'}`
     );
     return this;
   }
@@ -93,7 +93,7 @@ class Assertion {
   }
 
   an(expectedType, message) {
-    let condition = false;
+    let condition;
     if (expectedType === 'array') {
       condition = Array.isArray(this.actual);
     } else if (expectedType === 'error') {
@@ -104,7 +104,7 @@ class Assertion {
     this._assert(
       condition,
       message || `expected value to be an ${expectedType}`,
-      message || `expected value to not be an ${expectedType}`,
+      message || `expected value to not be an ${expectedType}`
     );
     return this;
   }
@@ -118,7 +118,7 @@ class Assertion {
     this._assert(
       condition,
       message || `expected ${String(this.actual)} to match ${String(regex)}`,
-      message || `expected ${String(this.actual)} to not match ${String(regex)}`,
+      message || `expected ${String(this.actual)} to not match ${String(regex)}`
     );
     return this;
   }
@@ -146,11 +146,7 @@ class Assertion {
       }
     }
 
-    this._assert(
-      condition,
-      message || 'expected function to throw',
-      message || 'expected function to not throw',
-    );
+    this._assert(condition, message || 'expected function to throw', message || 'expected function to not throw');
     return this;
   }
 }
