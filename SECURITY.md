@@ -4,8 +4,10 @@
 
 | Version | Supported |
 |---------|-----------|
-| 1.x     | Yes       |
-| < 1.0   | No        |
+| 6.x     | Yes       |
+| < 6.0   | No        |
+
+Only the latest major release line receives security fixes.
 
 ## Reporting Vulnerabilities
 
@@ -350,6 +352,33 @@ The Montgomery reduction and other arithmetic operations in `@theqrl/mldsa87` us
 | `@theqrl/mldsa87` | ML-DSA-87 signatures | Audited; FIPS 204 compliant |
 | `@noble/hashes` | SHA-256, SHAKE-256 | Widely audited; constant-time |
 
+### Bundled Dependencies in the CJS Artifact
+
+The published package ships two builds:
+
+- **ESM** (`dist/mjs/wallet.js`) resolves `@theqrl/mldsa87` and
+  `@noble/hashes` from `node_modules` as normal dependencies.
+- **CJS** (`dist/cjs/wallet.js`) **embeds compiled copies** of both
+  dependencies in the bundle. This is forced by `@noble/hashes` being
+  ESM-only — a CJS `require()` cannot load it un-bundled.
+
+Implications for auditors and dependency scanners:
+
+- Tools that scan your application's `node_modules` or lockfile see the
+  dependency versions used by the **ESM** build. The CJS bundle contains
+  the dependency code that was current when this package version was
+  built; it is not visible to `npm audit` in consuming applications.
+- CJS consumers receive upstream security fixes only via a new
+  `@theqrl/wallet.js` release, not via transitive updates.
+
+**Dependency-patch playbook (maintainers):** when `@theqrl/mldsa87` or
+`@noble/hashes` publishes a security fix, treat it as release-blocking:
+bump the dependency, run `npm run build` to regenerate `dist/`, and
+publish promptly with a `fix:` commit. CI's `dist-check` job enforces
+that a dependency bump cannot merge without the rebuilt bundles —
+merging the bump is sufficient to guarantee the patched CJS artifact
+ships with the resulting release.
+
 ---
 
 ## Best Practices
@@ -369,18 +398,6 @@ The Montgomery reduction and other arithmetic operations in `@theqrl/mldsa87` us
 - Transmit seeds/mnemonics over networks
 - Reuse seeds across different applications
 - Ignore validation errors
-
----
-
-## Audit Status
-
-This library has been security audited. See the [internal audit](https://github.com/theQRL/internal-audit/tree/main/wallet.js) for details.
-
-| Category | Issues Found | Status |
-|----------|--------------|--------|
-| Critical | 1 | Fixed |
-| High | 2 | Fixed |
-| Medium | 1 | Fixed |
 
 ---
 

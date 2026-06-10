@@ -245,6 +245,11 @@ This library currently supports **ML-DSA-87** (FIPS 204), the NIST standardized 
 - `@theqrl/mldsa87` - ML-DSA-87 implementation
 - `@noble/hashes` - SHA-256, SHAKE-256
 
+Note: the ESM build resolves these from `node_modules`; the CJS build
+embeds compiled copies (because `@noble/hashes` is ESM-only), so CJS
+consumers receive dependency security fixes via new `@theqrl/wallet.js`
+releases. See [SECURITY.md](SECURITY.md#bundled-dependencies-in-the-cjs-artifact).
+
 ## Requirements
 
 - **Node.js**: 20.19+, 22.x, or 24.x (requires `globalThis.crypto.getRandomValues`)
