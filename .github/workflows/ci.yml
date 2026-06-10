@@ -29,6 +29,9 @@ jobs:
           node-version: '22.x'
       - run: npm ci
       - run: npm run lint-check
+      # checkJs validation of the JSDoc annotations that generate the
+      # published type declarations (types/).
+      - run: npm run typecheck
 
   test:
     name: Test (Node ${{ matrix.node-version }})

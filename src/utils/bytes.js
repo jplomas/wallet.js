@@ -6,17 +6,19 @@
 import { hexToBytes } from '@noble/hashes/utils.js';
 
 /**
+ * Type guard: true when `input` is a Uint8Array (including Buffer).
  * @param {unknown} input
- * @returns {boolean}
+ * @returns {input is Uint8Array}
  */
 export function isUint8(input) {
   return input instanceof Uint8Array;
 }
 
 /**
+ * Type guard: true when `input` is a hex-like string.
  * Accepts strings with optional 0x/0X prefix and separators(space, :, _, -).
  * @param {unknown} input
- * @returns {boolean}
+ * @returns {input is string}
  */
 export function isHexLike(input) {
   if (typeof input !== 'string') return false;

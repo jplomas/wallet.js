@@ -11,6 +11,8 @@ import {
   CryptoSecretKeyBytes,
 } from '@theqrl/mldsa87';
 
+/** @typedef {import('../common/seed.js').Seed} Seed */
+
 /**
  * Generate a keypair.
  *

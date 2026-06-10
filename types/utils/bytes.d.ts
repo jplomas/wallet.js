@@ -1,14 +1,16 @@
 /**
+ * Type guard: true when `input` is a Uint8Array (including Buffer).
  * @param {unknown} input
- * @returns {boolean}
+ * @returns {input is Uint8Array}
  */
-export function isUint8(input: unknown): boolean;
+export function isUint8(input: unknown): input is Uint8Array;
 /**
+ * Type guard: true when `input` is a hex-like string.
  * Accepts strings with optional 0x/0X prefix and separators(space, :, _, -).
  * @param {unknown} input
- * @returns {boolean}
+ * @returns {input is string}
  */
-export function isHexLike(input: unknown): boolean;
+export function isHexLike(input: unknown): input is string;
 /**
  * Remove 0x prefix and all non-hex chars.
  * @param {string} hex

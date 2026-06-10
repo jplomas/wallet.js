@@ -1,3 +1,5 @@
+export type Seed = import("../common/seed.js").Seed;
+/** @typedef {import('../common/seed.js').Seed} Seed */
 /**
  * Generate a keypair.
  *

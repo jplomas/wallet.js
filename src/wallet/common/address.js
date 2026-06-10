@@ -35,6 +35,10 @@ import { ADDRESS_SIZE } from './constants.js';
 const HEX_LEN = ADDRESS_SIZE * 2;
 const HEX_REGEX = /^[0-9a-fA-F]+$/;
 
+/**
+ * @param {Uint8Array} bytes
+ * @returns {string} lowercase hex, two characters per byte.
+ */
 function bytesToLowerHex(bytes) {
   let hex = '';
   for (let i = 0; i < bytes.length; i += 1) {

@@ -1,0 +1,26 @@
+{
+  // Type-checks the JSDoc annotations that generate the published
+  // declarations (types/) — `npm run typecheck`, enforced in CI.
+  //
+  // `strict` is intentionally false for now: TypeScript 6 defaults the
+  // strict family on, and strict-null modeling of zeroize()'s null-out
+  // pattern would require pervasive inline casts that hurt the source's
+  // auditability. Non-strict checkJs still catches the drift class that
+  // matters for consumers: wrong parameter/return types, unresolved type
+  // names, bad imports, and arity mismatches. Ratchet toward strict by
+  // enabling individual flags (noImplicitAny first) as annotations are
+  // tightened.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "emitDeclarationOnly": false,
+    "declaration": false,
+    "declarationMap": false,
+    "checkJs": true,
+    "strict": false,
+    "target": "es2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"]
+  }
+}

@@ -59,6 +59,10 @@ const EXTENDED_SEED_SIZE = DESCRIPTOR_SIZE + SEED_SIZE;
 const HEX_LEN = ADDRESS_SIZE * 2;
 const HEX_REGEX = /^[0-9a-fA-F]+$/;
 
+/**
+ * @param {Uint8Array} bytes
+ * @returns {string} lowercase hex, two characters per byte.
+ */
 function bytesToLowerHex(bytes) {
   let hex = '';
   for (let i = 0; i < bytes.length; i += 1) {
@@ -268,17 +272,19 @@ function getAddressFromPKAndDescriptor(pk, descriptor) {
 
 
 /**
+ * Type guard: true when `input` is a Uint8Array (including Buffer).
  * @param {unknown} input
- * @returns {boolean}
+ * @returns {input is Uint8Array}
  */
 function isUint8(input) {
   return input instanceof Uint8Array;
 }
 
 /**
+ * Type guard: true when `input` is a hex-like string.
  * Accepts strings with optional 0x/0X prefix and separators(space, :, _, -).
  * @param {unknown} input
- * @returns {boolean}
+ * @returns {input is string}
  */
 function isHexLike(input) {
   if (typeof input !== 'string') return false;
@@ -4885,6 +4891,8 @@ function mnemonicToBin(mnemonic) {
  * @module wallet/ml_dsa_87/crypto
  */
 
+
+/** @typedef {import('../common/seed.js').Seed} Seed */
 
 /**
  * Generate a keypair.
