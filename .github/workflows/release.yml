@@ -77,7 +77,8 @@ jobs:
         # Pinned to 22.14.0 to match the bundled npm version that can cleanly
         # self-update to npm@^11.5.1 in the next step. Newer Node 22.x patches
         # ship an npm where the global self-install corrupts its own
-        # node_modules (missing promise-retry).
+        # node_modules (missing promise-retry). semantic-release@25 also
+        # requires node ^22.14.0 || >=24.10.0, which this pin satisfies.
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22.14.0
@@ -93,9 +94,12 @@ jobs:
           npm --version
 
       - name: Install dependencies
-        run: |
-          rm -rf node_modules package-lock.json
-          npm install
+        # `npm ci` (not `npm install`): the publish path must build from the
+        # same locked dependency tree that preflight/CI tested. Resolving
+        # dependencies fresh in the most privileged job (bypass SSH key +
+        # npm OIDC) would let an unreviewed registry release into the build
+        # toolchain.
+        run: npm ci
 
       - name: Build
         run: npm run build
@@ -129,7 +133,10 @@ jobs:
           GIT_COMMITTER_NAME: github-actions[bot]
           GIT_COMMITTER_EMAIL: github-actions[bot]@users.noreply.github.com
           REPO: ${{ github.repository }}
-        run: npx semantic-release@24 --repository-url "git@github.com:${GITHUB_REPOSITORY}.git"
+        # --no-install: run the lockfile-pinned semantic-release from
+        # devDependencies — never fetch the release toolchain from the
+        # registry at release time.
+        run: npx --no-install semantic-release --repository-url "git@github.com:${GITHUB_REPOSITORY}.git"
 
       - name: Check if release happened
         id: check-release
@@ -291,9 +298,9 @@ jobs:
           node-version: '22.x'
 
       - name: Install dependencies
-        run: |
-          rm -rf node_modules package-lock.json
-          npm install
+        # Locked install — SLSA subjects must be produced from the same
+        # dependency tree the rest of the pipeline tested.
+        run: npm ci
 
       - name: Build
         run: npm run build
