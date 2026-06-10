@@ -4827,6 +4827,12 @@ const WORD_LOOKUP = WordList.reduce((acc, word, i) => {
  * @returns {string}
  */
 function binToMnemonic(input) {
+  if (!(input instanceof Uint8Array)) {
+    // Without this check a string (or array) input whose length happens to
+    // be a multiple of 3 would silently encode to a garbage mnemonic —
+    // character indexing coerces to NaN, which maps every word to index 0.
+    throw new Error('input must be a Uint8Array');
+  }
   if (input.length % 3 !== 0) {
     throw new Error('byte count needs to be a multiple of 3');
   }
@@ -5065,6 +5071,24 @@ class Wallet {
    * secret-bearing state with a Wallet.
    */
   constructor({ descriptor, seed, pk, sk }) {
+    if (!(descriptor instanceof Descriptor)) {
+      throw new Error('descriptor must be a Descriptor instance');
+    }
+    if (!(seed instanceof Seed)) {
+      throw new Error('seed must be a Seed instance');
+    }
+    if (!(pk instanceof Uint8Array)) {
+      throw new Error('pk must be a Uint8Array');
+    }
+    if (pk.length !== CryptoPublicKeyBytes) {
+      throw new Error(`pk must be ${CryptoPublicKeyBytes} bytes, got ${pk.length}`);
+    }
+    if (!(sk instanceof Uint8Array)) {
+      throw new Error('sk must be a Uint8Array');
+    }
+    if (sk.length !== CryptoSecretKeyBytes) {
+      throw new Error(`sk must be ${CryptoSecretKeyBytes} bytes, got ${sk.length}`);
+    }
     this.descriptor = descriptor;
     this.seed = seed;
     this.pk = pk;

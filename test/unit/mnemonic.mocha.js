@@ -17,6 +17,14 @@ describe('wallet/misc/mnemonic', () => {
     it('throws when byte lenght is not a multiple of 3', () => {
       expect(() => binToMnemonic(Uint8Array.from([0x01]))).to.throw('byte count needs to be a multiple of 3');
     });
+
+    it('throws on non-Uint8Array input instead of encoding garbage', () => {
+      // A string of length divisible by 3 used to pass the length check and
+      // silently encode to a mnemonic of index-0 words via NaN coercion.
+      expect(() => binToMnemonic('abcdef')).to.throw('input must be a Uint8Array');
+      expect(() => binToMnemonic([0, 0, 0])).to.throw('input must be a Uint8Array');
+      expect(() => binToMnemonic(null)).to.throw('input must be a Uint8Array');
+    });
   });
 
   describe('mnemonicToBin', () => {

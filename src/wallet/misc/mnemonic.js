@@ -16,6 +16,12 @@ const WORD_LOOKUP = WordList.reduce((acc, word, i) => {
  * @returns {string}
  */
 function binToMnemonic(input) {
+  if (!(input instanceof Uint8Array)) {
+    // Without this check a string (or array) input whose length happens to
+    // be a multiple of 3 would silently encode to a garbage mnemonic —
+    // character indexing coerces to NaN, which maps every word to index 0.
+    throw new Error('input must be a Uint8Array');
+  }
   if (input.length % 3 !== 0) {
     throw new Error('byte count needs to be a multiple of 3');
   }

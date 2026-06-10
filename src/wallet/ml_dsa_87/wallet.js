@@ -4,6 +4,7 @@
  */
 
 import { bytesToHex } from '@noble/hashes/utils.js';
+import { CryptoPublicKeyBytes, CryptoSecretKeyBytes } from '@theqrl/mldsa87';
 import { randomBytes } from '../../utils/random.js';
 import { mnemonicToBin, binToMnemonic } from '../misc/mnemonic.js';
 import { getAddressFromPKAndDescriptor, addressToString } from '../common/address.js';
@@ -36,6 +37,24 @@ class Wallet {
    * secret-bearing state with a Wallet.
    */
   constructor({ descriptor, seed, pk, sk }) {
+    if (!(descriptor instanceof Descriptor)) {
+      throw new Error('descriptor must be a Descriptor instance');
+    }
+    if (!(seed instanceof Seed)) {
+      throw new Error('seed must be a Seed instance');
+    }
+    if (!(pk instanceof Uint8Array)) {
+      throw new Error('pk must be a Uint8Array');
+    }
+    if (pk.length !== CryptoPublicKeyBytes) {
+      throw new Error(`pk must be ${CryptoPublicKeyBytes} bytes, got ${pk.length}`);
+    }
+    if (!(sk instanceof Uint8Array)) {
+      throw new Error('sk must be a Uint8Array');
+    }
+    if (sk.length !== CryptoSecretKeyBytes) {
+      throw new Error(`sk must be ${CryptoSecretKeyBytes} bytes, got ${sk.length}`);
+    }
     this.descriptor = descriptor;
     this.seed = seed;
     this.pk = pk;

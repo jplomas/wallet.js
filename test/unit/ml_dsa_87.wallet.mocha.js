@@ -1,5 +1,6 @@
 import { expect } from 'chai';
 import { bytesToHex, utf8ToBytes, hexToBytes } from '@noble/hashes/utils.js';
+import { CryptoPublicKeyBytes, CryptoSecretKeyBytes } from '@theqrl/mldsa87';
 import { walletTestCases } from '../fixtures/ml_dsa_87.fixtures.js';
 import { ExtendedSeed } from '../../src/wallet/common/seed.js';
 import { Wallet as MLDSA87 } from '../../src/wallet/ml_dsa_87/wallet.js';
@@ -31,6 +32,53 @@ const walletCreators = {
   FromMnemonic: createWalletFromMnemonic,
   FromFactory: createWalletFromFactory,
 };
+
+describe('Wallet constructor input validation', () => {
+  // The constructor is reachable directly (the class is exported as
+  // MLDSA87), so garbage inputs must fail at construction time rather
+  // than as confusing errors during later sign/address calls.
+  let parts;
+
+  before(() => {
+    const w = createWalletFromExtendedSeed(walletTestCases[0]);
+    parts = { descriptor: w.getDescriptor(), seed: w.getSeed(), pk: w.getPK(), sk: w.getSK() };
+  });
+
+  it('constructs directly from valid parts', () => {
+    const w = new MLDSA87(parts);
+    expect(w.getAddressStr()).to.equal(walletTestCases[0].wantAddress);
+  });
+
+  it('rejects a descriptor that is not a Descriptor instance', () => {
+    expect(() => new MLDSA87({ ...parts, descriptor: new Uint8Array([1, 0, 0]) })).to.throw(
+      'descriptor must be a Descriptor instance'
+    );
+  });
+
+  it('rejects a seed that is not a Seed instance', () => {
+    expect(() => new MLDSA87({ ...parts, seed: parts.seed.toBytes() })).to.throw('seed must be a Seed instance');
+  });
+
+  it('rejects a pk that is not a Uint8Array', () => {
+    expect(() => new MLDSA87({ ...parts, pk: Array.from(parts.pk) })).to.throw('pk must be a Uint8Array');
+  });
+
+  it('rejects a pk of the wrong length', () => {
+    expect(() => new MLDSA87({ ...parts, pk: new Uint8Array(10) })).to.throw(
+      `pk must be ${CryptoPublicKeyBytes} bytes, got 10`
+    );
+  });
+
+  it('rejects an sk that is not a Uint8Array', () => {
+    expect(() => new MLDSA87({ ...parts, sk: Array.from(parts.sk) })).to.throw('sk must be a Uint8Array');
+  });
+
+  it('rejects an sk of the wrong length', () => {
+    expect(() => new MLDSA87({ ...parts, sk: new Uint8Array(10) })).to.throw(
+      `sk must be ${CryptoSecretKeyBytes} bytes, got 10`
+    );
+  });
+});
 
 describe('ML-DSA-87 Wallet', () => {
   it('newWallet() creates a wallet(random)', () => {
