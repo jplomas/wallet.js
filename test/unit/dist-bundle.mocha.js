@@ -34,7 +34,7 @@ describe('dist bundle smoke tests', () => {
         const w = MLDSA87.newWallet();
         console.log(w.getAddressStr());
       `);
-      // Default address size is 20 bytes → Q + 40 hex chars (NIST Cat 1, v2.x)
+      // Canonical 64-byte address → Q + 128 lowercase hex chars (v6.x)
       expect(stdout.trim()).to.match(/^Q[0-9a-f]{128}$/);
     });
 
@@ -72,7 +72,7 @@ describe('dist bundle smoke tests', () => {
       `,
         { cjs: true }
       );
-      // Default address size is 20 bytes → Q + 40 hex chars (NIST Cat 1, v2.x)
+      // Canonical 64-byte address → Q + 128 lowercase hex chars (v6.x)
       expect(stdout.trim()).to.match(/^Q[0-9a-f]{128}$/);
     });
 
