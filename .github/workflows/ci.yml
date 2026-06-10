@@ -45,7 +45,11 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       - run: npm ci
-      - run: npm test
+      # `coverage` wraps the same mocha run in c8 with check-coverage
+      # thresholds (100% statements/branches/functions/lines, configured in
+      # package.json) so any PR that drops coverage fails here, on PRs from
+      # forks included — Codecov only reports on post-merge pushes.
+      - run: npm run coverage
 
   dist-check:
     name: Verify dist/ and types/ are up to date
