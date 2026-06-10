@@ -1,3 +1,13 @@
+## [6.1.0](https://github.com/theQRL/wallet.js/compare/v6.0.1...v6.1.0) (2026-05-22)
+
+### Features
+
+* EIP-55 style checksumming ([6890145](https://github.com/theQRL/wallet.js/commit/68901451956e5570f3a4e20efaec3a7e254dae11))
+
+### Bug Fixes
+
+* checksum browser test ([748d9d8](https://github.com/theQRL/wallet.js/commit/748d9d820b6456fa70dabf3f67797f6816c2a14f))
+
 ## [6.0.1](https://github.com/theQRL/wallet.js/compare/v6.0.0...v6.0.1) (2026-05-20)
 
 ### Bug Fixes
