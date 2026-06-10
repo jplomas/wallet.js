@@ -5047,6 +5047,14 @@ const SECRET_FIELDS = ['seed', 'sk', 'extendedSeed', '_zeroized'];
 class Wallet {
   /**
    * @param {{descriptor: Descriptor, seed: Seed, pk: Uint8Array, sk: Uint8Array}} opts
+   *
+   * Ownership contract: the constructor takes ownership of every object and
+   * buffer passed in. Callers constructing a Wallet directly must not
+   * retain, mutate, or zeroize `descriptor`, `seed`, `pk`, or `sk` after
+   * construction — `zeroize()` assumes the wallet is their sole owner.
+   * The static factories uphold this internally; `newWalletFromSeed`
+   * defensively copies the caller's Seed so external code never shares
+   * secret-bearing state with a Wallet.
    */
   constructor({ descriptor, seed, pk, sk }) {
     this.descriptor = descriptor;
@@ -5079,6 +5087,14 @@ class Wallet {
   }
 
   /**
+   * Create a wallet deterministically from an existing seed.
+   *
+   * The caller's `Seed` instance is **defensively copied**: the wallet and
+   * the caller's object have independent lifecycles. Zeroizing the input
+   * Seed afterwards does not affect the wallet, and `wallet.zeroize()`
+   * does not reach the caller's instance — the caller stays responsible
+   * for zeroizing their own copy.
+   *
    * @param {Seed} seed
    * @param {[number, number]} [metadata=[0,0]]
    * @returns {Wallet}
@@ -5086,7 +5102,14 @@ class Wallet {
   static newWalletFromSeed(seed, metadata = [0, 0]) {
     const descriptor = newMLDSA87Descriptor(metadata);
     const { pk, sk } = keygen(seed);
-    return new Wallet({ descriptor, seed, pk, sk });
+    // Copy the caller's Seed so no secret-bearing state is shared across
+    // the API boundary; zeroize the transient byte buffer once wrapped.
+    const seedBytes = seed.toBytes();
+    try {
+      return new Wallet({ descriptor, seed: new Seed(seedBytes), pk, sk });
+    } finally {
+      seedBytes.fill(0);
+    }
   }
 
   /**

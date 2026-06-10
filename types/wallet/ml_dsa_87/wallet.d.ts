@@ -6,6 +6,14 @@ export class Wallet {
      */
     static newWallet(metadata?: [number, number]): Wallet;
     /**
+     * Create a wallet deterministically from an existing seed.
+     *
+     * The caller's `Seed` instance is **defensively copied**: the wallet and
+     * the caller's object have independent lifecycles. Zeroizing the input
+     * Seed afterwards does not affect the wallet, and `wallet.zeroize()`
+     * does not reach the caller's instance — the caller stays responsible
+     * for zeroizing their own copy.
+     *
      * @param {Seed} seed
      * @param {[number, number]} [metadata=[0,0]]
      * @returns {Wallet}
@@ -68,6 +76,14 @@ export class Wallet {
     };
     /**
      * @param {{descriptor: Descriptor, seed: Seed, pk: Uint8Array, sk: Uint8Array}} opts
+     *
+     * Ownership contract: the constructor takes ownership of every object and
+     * buffer passed in. Callers constructing a Wallet directly must not
+     * retain, mutate, or zeroize `descriptor`, `seed`, `pk`, or `sk` after
+     * construction — `zeroize()` assumes the wallet is their sole owner.
+     * The static factories uphold this internally; `newWalletFromSeed`
+     * defensively copies the caller's Seed so external code never shares
+     * secret-bearing state with a Wallet.
      */
     constructor({ descriptor, seed, pk, sk }: {
         descriptor: Descriptor;

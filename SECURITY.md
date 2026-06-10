@@ -185,6 +185,28 @@ This is by design for FIPS 204 compliance and go-qrllib cross-implementation com
    - Avoid logging or serializing sensitive data
    - Consider hardware security modules for high-value applications
 
+### Lifecycle & Ownership Contract
+
+- **`newWalletFromSeed` copies the caller's `Seed`.** The wallet and the
+  caller's instance have independent lifecycles: zeroizing your input
+  `Seed` afterwards does not affect the wallet, and `wallet.zeroize()`
+  does not reach caller-held objects. Callers remain responsible for
+  zeroizing their own copies (`seed.zeroize()`).
+- **After `zeroize()`, secret accessors fail loudly.** `getSK()`,
+  `getSeed()`, `getExtendedSeed()`, `getHexExtendedSeed()`,
+  `getMnemonic()`, `sign()`, and `signDeterministic()` throw
+  `Wallet has been zeroized`. Secret material is never silently replaced
+  by zeroed bytes.
+- **Public accessors intentionally survive `zeroize()`.** `getAddress()`,
+  `getAddressStr()`, `getPK()`, `getDescriptor()`, and static `verify`
+  operate on public data and keep working — e.g. so an application can
+  still display which wallet was closed. `zeroize()` destroys secrets,
+  not public identity.
+- **Constructing `Wallet` directly transfers ownership.** The constructor
+  takes ownership of every object and buffer passed to it; do not retain,
+  mutate, or zeroize them afterwards. Prefer the static factories, which
+  manage ownership for you.
+
 ### Accidental Leakage Hardening
 
 Any in-process code holding a `Wallet` reference already has full signing
