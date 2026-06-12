@@ -35,6 +35,14 @@ The c8 gate requires 100% on every metric. New branches need tests for
 both sides. Use `/* c8 ignore */` only with a comment explaining why the
 path is unreachable (see existing examples in `src/`).
 
+The flat-100% baseline exists for **drift visibility** — any drop points
+directly at the new untested branch, which is why unreachable paths are
+excluded with rationale instead of letting the number sit below the
+ceiling. This repo is past the 100% milestone and the gate is locked in:
+**lowering it is a maintainer decision**, made as an explicit, reviewed
+change to the c8/Codecov thresholds with its reasoning in the PR — never
+a status check everyone learns to ignore.
+
 ### The browser suite uses hand-rolled shims
 
 `browser-tests/` runs shared suites from `test/unit/` in a real browser
