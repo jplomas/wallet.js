@@ -38,6 +38,12 @@ export function cleanHex(hex) {
 /**
  * Convert various inputs to a fixed-length byte array.
  * Supports hex string(with/without 0x), Uint8Array, Buffer, number[].
+ *
+ * The `number[]` path requires every element to be an integer in
+ * [0, 255]; out-of-range or non-integer elements throw instead of being
+ * silently coerced modulo 256 by `Uint8Array.from` (e.g. 256→0, -1→255,
+ * 1.5→1 would all corrupt key/descriptor material undetected).
+ *
  * @param {string|Uint8Array|Buffer|number[]} input
  * @param {number} expectedLen
  * @param {string} [label='bytes']
@@ -50,6 +56,12 @@ export function toFixedU8(input, expectedLen, label = 'bytes') {
   } else if (isHexLike(input)) {
     bytes = hexToBytes(cleanHex(input));
   } else if (Array.isArray(input)) {
+    for (let i = 0; i < input.length; i += 1) {
+      const v = input[i];
+      if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > 255) {
+        throw new Error(`${label}: array element at index ${i} must be an integer in [0, 255], got ${String(v)}`);
+      }
+    }
     bytes = Uint8Array.from(input);
   } else {
     throw new Error(`${label}: unsupported input type; pass hex string or Uint8Array/Buffer`);

@@ -243,6 +243,13 @@ class Wallet {
   /**
    * Verify a signature. The descriptor is required so verification uses
    * the same domain-separated context that signing did.
+   *
+   * **Total over malformed inputs**: wrong-typed or wrong-length
+   * signature/message/pk and a non-Descriptor descriptor all return
+   * `false` — this boundary never throws. Use
+   * {@link Wallet.verifyWithReason} when you need to distinguish *why*
+   * verification failed.
+   *
    * @param {Uint8Array} signature
    * @param {Uint8Array} message
    * @param {Uint8Array} pk
@@ -250,7 +257,7 @@ class Wallet {
    * @returns {boolean}
    */
   static verify(signature, message, pk, descriptor) {
-    return verify(signature, message, pk, signingContext(descriptor));
+    return Wallet.verifyWithReason(signature, message, pk, descriptor).ok;
   }
 
   /**

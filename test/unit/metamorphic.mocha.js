@@ -23,6 +23,8 @@ import { expect } from 'chai';
 import { CryptoBytes, CryptoPublicKeyBytes } from '@theqrl/mldsa87';
 import { Wallet as MLDSA87 } from '../../src/wallet/ml_dsa_87/wallet.js';
 import { newMLDSA87Descriptor } from '../../src/wallet/ml_dsa_87/descriptor.js';
+import { verify as cryptoVerify } from '../../src/wallet/ml_dsa_87/crypto.js';
+import { signingContext } from '../../src/wallet/common/context.js';
 import { walletTestCases } from '../fixtures/ml_dsa_87.fixtures.js';
 
 function flipSingleBit(src, bitIndex) {
@@ -122,9 +124,17 @@ describe('metamorphic: deterministic signing differs on mauled message (TOB-QRLL
 
 describe('metamorphic: descriptor-binding (wallet-specific, TOB-QRLLIB-3 mode)', () => {
   // A signature produced under descriptor D1 must NOT verify under any
-  // descriptor D2 ≠ D1. This is the wallet-layer property that the
-  // 8-byte signing context `"ZOND" || SIGNING_CONTEXT_VERSION ||
-  // descriptor` actually binds the descriptor into every signature.
+  // context carrying descriptor bytes D2 ≠ D1 — the 8-byte signing
+  // context `"ZOND" || SIGNING_CONTEXT_VERSION || descriptor` binds the
+  // descriptor into every signature.
+  //
+  // Both halves of TOB-QRLLIB-3 are locked here:
+  //  (a) REJECTION — non-zero reserved metadata cannot construct a
+  //      Descriptor at all, so sibling descriptors are unrepresentable
+  //      through the public API (go-qrllib `IsValid` parity);
+  //  (b) BINDING — even if non-canonical descriptor bytes reach the
+  //      crypto layer (hand-built context below, bypassing the public
+  //      constructors), the signature does not verify under them.
   corpusWallets().forEach((w, wi) => {
     corpusMessages().forEach((msg) => {
       it(`wallet${wi} msg_len=${msg.length}`, () => {
@@ -133,23 +143,30 @@ describe('metamorphic: descriptor-binding (wallet-specific, TOB-QRLLIB-3 mode)',
         const trueDesc = w.getDescriptor();
         expect(MLDSA87.verify(sig, msg, pk, trueDesc)).to.equal(true);
 
-        // Construct several different descriptors by varying the
-        // 2 metadata bytes — same wallet type, different metadata, so
-        // the descriptor parser accepts them but they don't match the
-        // signing context the signature was produced under.
+        // (a) Rejection: sibling descriptors cannot be constructed.
         for (const [m0, m1] of [
           [1, 0],
           [0, 1],
           [0xff, 0xff],
           [0x42, 0x42],
         ]) {
-          const other = newMLDSA87Descriptor([m0, m1]);
-          if (Buffer.from(other.toBytes()).equals(Buffer.from(trueDesc.toBytes()))) {
-            continue; // skip the identity case
-          }
           expect(
-            MLDSA87.verify(sig, msg, pk, other),
-            `signature verified under non-binding descriptor [${m0},${m1}]`
+            () => newMLDSA87Descriptor(/** @type {[number, number]} */ ([m0, m1])),
+            `descriptor with reserved metadata [${m0},${m1}] was constructible`
+          ).to.throw('Descriptor metadata bytes are reserved and must be zero');
+        }
+
+        // (b) Binding: a hand-built context whose descriptor bytes differ
+        // from the signing descriptor must not verify, even though the
+        // sig/msg/pk triple is untouched. Mutate each descriptor byte
+        // position within the true 8-byte context.
+        const trueCtx = signingContext(trueDesc);
+        for (let pos = trueCtx.length - 3; pos < trueCtx.length; pos += 1) {
+          const mauledCtx = new Uint8Array(trueCtx);
+          mauledCtx[pos] ^= 0x42;
+          expect(
+            cryptoVerify(sig, msg, pk, mauledCtx),
+            `signature verified under mauled descriptor context byte ${pos}`
           ).to.equal(false);
         }
       });

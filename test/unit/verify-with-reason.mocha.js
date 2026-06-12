@@ -76,19 +76,43 @@ describe('Wallet.verifyWithReason (TOB-QRLLIB-14)', () => {
     expect(result.reason).to.equal('verification-failed');
   });
 
-  it('distinguishes verification-failed under non-binding descriptor', () => {
-    // Well-formed but wrong-descriptor — the cryptographic binding from
-    // TOB-QRLLIB-3 prevents this from verifying. From verifyWithReason's
-    // perspective the inputs are well-formed (right types, right lengths)
-    // so the reason is the generic 'verification-failed'.
-    const otherDesc = newMLDSA87Descriptor([0x42, 0x42]);
-    if (Buffer.from(otherDesc.toBytes()).equals(Buffer.from(desc.toBytes()))) {
-      // pathological collision with random newWallet() default — skip
-      return;
-    }
-    const result = MLDSA87.verifyWithReason(sig, msg, pk, otherDesc);
-    expect(result.ok).to.equal(false);
-    expect(result.reason).to.equal('verification-failed');
+  it('non-binding sibling descriptors are unrepresentable (TOB-QRLLIB-3 rejection)', () => {
+    // Previously this asserted reason === 'verification-failed' under a
+    // descriptor with different metadata. Reserved metadata is now
+    // rejected at construction (go-qrllib IsValid parity), so the
+    // "well-formed but wrong descriptor" scenario cannot be built via the
+    // public API at all; the binding half of TOB-QRLLIB-3 is locked at
+    // the crypto layer in metamorphic.mocha.js.
+    expect(() => newMLDSA87Descriptor([0x42, 0x42])).to.throw(
+      'Descriptor metadata bytes are reserved and must be zero'
+    );
+  });
+
+  describe('boolean Wallet.verify is total (TOB-QRLLIB-11)', () => {
+    // The boolean form delegates to verifyWithReason and therefore never
+    // throws on malformed inputs — wrong types, wrong lengths, and
+    // non-Descriptor descriptors all collapse to `false` at this boundary
+    // (go-qrllib parity: its Verify returns false instead of panicking).
+    it('returns true on a valid tuple', () => {
+      expect(MLDSA87.verify(sig, msg, pk, desc)).to.equal(true);
+    });
+
+    it('returns false (no throw) on malformed inputs', () => {
+      expect(MLDSA87.verify('not-bytes', msg, pk, desc)).to.equal(false);
+      expect(MLDSA87.verify(new Uint8Array(CryptoBytes - 1), msg, pk, desc)).to.equal(false);
+      expect(MLDSA87.verify(sig, 'not-bytes', pk, desc)).to.equal(false);
+      expect(MLDSA87.verify(sig, msg, 'not-bytes', desc)).to.equal(false);
+      expect(MLDSA87.verify(sig, msg, new Uint8Array(CryptoPublicKeyBytes - 1), desc)).to.equal(false);
+      expect(MLDSA87.verify(sig, msg, pk, 'not-a-descriptor')).to.equal(false);
+      expect(MLDSA87.verify(null, null, null, null)).to.equal(false);
+      expect(MLDSA87.verify(undefined, undefined, undefined, undefined)).to.equal(false);
+    });
+
+    it('returns false on a tampered signature', () => {
+      const tampered = new Uint8Array(sig);
+      tampered[1] ^= 0x80;
+      expect(MLDSA87.verify(tampered, msg, pk, desc)).to.equal(false);
+    });
   });
 
   describe('lower-layer validation errors carry stable codes', () => {

@@ -72,7 +72,9 @@ class ExtendedSeed {
   /**
    * Layout: [3 bytes descriptor] || [48 bytes seed].
    * @param {Uint8Array} bytes Exactly 51 bytes.
-   * @throws {Error} If size mismatch or invalid wallet type.
+   * @throws {Error} If size mismatch, invalid wallet type, or non-zero
+   *   reserved descriptor metadata bytes (1–2) — matching go-qrllib
+   *   descriptor validation.
    */
   constructor(bytes) {
     if (!bytes || bytes.length !== EXTENDED_SEED_SIZE) {
@@ -82,6 +84,9 @@ class ExtendedSeed {
     this.bytes = Uint8Array.from(bytes);
     if (!isValidWalletType(this.bytes[0])) {
       throw new Error('Invalid wallet type in descriptor');
+    }
+    if (this.bytes[1] !== 0 || this.bytes[2] !== 0) {
+      throw new Error('Descriptor metadata bytes are reserved and must be zero');
     }
     // Hide raw extended-seed bytes from Object.keys / JSON.stringify /
     // spread / default util.inspect.

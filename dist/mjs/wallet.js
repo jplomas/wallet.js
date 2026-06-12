@@ -304,6 +304,12 @@ function cleanHex(hex) {
 /**
  * Convert various inputs to a fixed-length byte array.
  * Supports hex string(with/without 0x), Uint8Array, Buffer, number[].
+ *
+ * The `number[]` path requires every element to be an integer in
+ * [0, 255]; out-of-range or non-integer elements throw instead of being
+ * silently coerced modulo 256 by `Uint8Array.from` (e.g. 256→0, -1→255,
+ * 1.5→1 would all corrupt key/descriptor material undetected).
+ *
  * @param {string|Uint8Array|Buffer|number[]} input
  * @param {number} expectedLen
  * @param {string} [label='bytes']
@@ -316,6 +322,12 @@ function toFixedU8(input, expectedLen, label = 'bytes') {
   } else if (isHexLike(input)) {
     bytes = hexToBytes(cleanHex(input));
   } else if (Array.isArray(input)) {
+    for (let i = 0; i < input.length; i += 1) {
+      const v = input[i];
+      if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > 255) {
+        throw new Error(`${label}: array element at index ${i} must be an integer in [0, 255], got ${String(v)}`);
+      }
+    }
     bytes = Uint8Array.from(input);
   } else {
     throw new Error(`${label}: unsupported input type; pass hex string or Uint8Array/Buffer`);
@@ -351,7 +363,13 @@ function isValidWalletType(t) {
 /**
  * 3-byte descriptor for a wallet:
  *  - byte 0: wallet type (e.g. ML_DSA_87)
- *  - bytes 1..2: 2 bytes metadata
+ *  - bytes 1..2: 2 bytes metadata — **reserved, must be zero**
+ *
+ * Non-zero metadata is rejected everywhere a descriptor enters the API,
+ * matching go-qrllib's `Descriptor.IsValid` (bytes 1–2 must be 0).
+ * Without this, one keypair could enroll under many sibling addresses,
+ * and a non-zero-metadata wallet would be invalid to go-qrllib/rust-qrllib
+ * nodes — i.e. potentially unspendable.
  * @module wallet/common/descriptor
  */
 
@@ -359,7 +377,8 @@ function isValidWalletType(t) {
 class Descriptor {
   /**
    * @param {Uint8Array|number[]} bytes Must be exactly 3 bytes.
-   * @throws {Error} If size is not 3 or wallet type is invalid.
+   * @throws {Error} If size is not 3, wallet type is invalid, or the
+   *   reserved metadata bytes (1–2) are non-zero.
    */
   constructor(bytes) {
     if (!bytes || bytes.length !== DESCRIPTOR_SIZE) {
@@ -369,6 +388,9 @@ class Descriptor {
     this.bytes = Uint8Array.from(bytes);
     if (!isValidWalletType(this.bytes[0])) {
       throw new Error('Invalid wallet type in descriptor');
+    }
+    if (this.bytes[1] !== 0 || this.bytes[2] !== 0) {
+      throw new Error('Descriptor metadata bytes are reserved and must be zero');
     }
   }
 
@@ -400,8 +422,10 @@ class Descriptor {
 /**
  * Build descriptor bytes from parts.
  * @param {number} walletType byte.
- * @param {[number, number]} [metadata=[0,0]] Two metadata bytes.
+ * @param {[number, number]} [metadata=[0,0]] Two metadata bytes — reserved,
+ *   must both be zero (the parameter is kept for API compatibility).
  * @returns {Uint8Array} 3 bytes.
+ * @throws {Error} If the wallet type is invalid or metadata is non-zero.
  */
 function getDescriptorBytes(walletType, metadata = [0, 0]) {
   if (!isValidWalletType(walletType)) {
@@ -409,13 +433,13 @@ function getDescriptorBytes(walletType, metadata = [0, 0]) {
   }
   const m0 = metadata?.[0] ?? 0;
   const m1 = metadata?.[1] ?? 0;
-  if (!Number.isInteger(m0) || m0 < 0 || m0 > 255 || !Number.isInteger(m1) || m1 < 0 || m1 > 255) {
-    throw new Error('Descriptor metadata bytes must be in range [0, 255]');
+  if (m0 !== 0 || m1 !== 0) {
+    throw new Error('Descriptor metadata bytes are reserved and must be zero');
   }
   const out = new Uint8Array(DESCRIPTOR_SIZE);
   out[0] = walletType >>> 0;
-  out[1] = m0;
-  out[2] = m1;
+  out[1] = 0;
+  out[2] = 0;
   return out;
 }
 
@@ -488,7 +512,9 @@ class ExtendedSeed {
   /**
    * Layout: [3 bytes descriptor] || [48 bytes seed].
    * @param {Uint8Array} bytes Exactly 51 bytes.
-   * @throws {Error} If size mismatch or invalid wallet type.
+   * @throws {Error} If size mismatch, invalid wallet type, or non-zero
+   *   reserved descriptor metadata bytes (1–2) — matching go-qrllib
+   *   descriptor validation.
    */
   constructor(bytes) {
     if (!bytes || bytes.length !== EXTENDED_SEED_SIZE) {
@@ -498,6 +524,9 @@ class ExtendedSeed {
     this.bytes = Uint8Array.from(bytes);
     if (!isValidWalletType(this.bytes[0])) {
       throw new Error('Invalid wallet type in descriptor');
+    }
+    if (this.bytes[1] !== 0 || this.bytes[2] !== 0) {
+      throw new Error('Descriptor metadata bytes are reserved and must be zero');
     }
     // Hide raw extended-seed bytes from Object.keys / JSON.stringify /
     // spread / default util.inspect.
@@ -5296,6 +5325,13 @@ class Wallet {
   /**
    * Verify a signature. The descriptor is required so verification uses
    * the same domain-separated context that signing did.
+   *
+   * **Total over malformed inputs**: wrong-typed or wrong-length
+   * signature/message/pk and a non-Descriptor descriptor all return
+   * `false` — this boundary never throws. Use
+   * {@link Wallet.verifyWithReason} when you need to distinguish *why*
+   * verification failed.
+   *
    * @param {Uint8Array} signature
    * @param {Uint8Array} message
    * @param {Uint8Array} pk
@@ -5303,7 +5339,7 @@ class Wallet {
    * @returns {boolean}
    */
   static verify(signature, message, pk, descriptor) {
-    return verify(signature, message, pk, signingContext(descriptor));
+    return Wallet.verifyWithReason(signature, message, pk, descriptor).ok;
   }
 
   /**

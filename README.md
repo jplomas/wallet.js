@@ -61,11 +61,13 @@ console.log('Address:', wallet.getAddressStr());
 
 #### `MLDSA87.newWallet([metadata])`
 
-Creates a new wallet with a random seed.
+Creates a new wallet with a random seed. The optional 2-byte `metadata`
+is **reserved and must be `[0, 0]`** (the default) — non-zero values are
+rejected for parity with go-qrllib descriptor validation (see SECURITY.md
+"Descriptor Binding").
 
 ```javascript
 const wallet = MLDSA87.newWallet();
-const walletWithMeta = MLDSA87.newWallet([0x01, 0x02]); // Custom 2-byte metadata
 ```
 
 #### `MLDSA87.newWalletFromSeed(seed, [metadata])`

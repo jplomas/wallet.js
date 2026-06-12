@@ -1,7 +1,13 @@
 /**
  * 3-byte descriptor for a wallet:
  *  - byte 0: wallet type (e.g. ML_DSA_87)
- *  - bytes 1..2: 2 bytes metadata
+ *  - bytes 1..2: 2 bytes metadata — **reserved, must be zero**
+ *
+ * Non-zero metadata is rejected everywhere a descriptor enters the API,
+ * matching go-qrllib's `Descriptor.IsValid` (bytes 1–2 must be 0).
+ * Without this, one keypair could enroll under many sibling addresses,
+ * and a non-zero-metadata wallet would be invalid to go-qrllib/rust-qrllib
+ * nodes — i.e. potentially unspendable.
  * @module wallet/common/descriptor
  */
 
@@ -12,7 +18,8 @@ import { toFixedU8 } from '../../utils/bytes.js';
 class Descriptor {
   /**
    * @param {Uint8Array|number[]} bytes Must be exactly 3 bytes.
-   * @throws {Error} If size is not 3 or wallet type is invalid.
+   * @throws {Error} If size is not 3, wallet type is invalid, or the
+   *   reserved metadata bytes (1–2) are non-zero.
    */
   constructor(bytes) {
     if (!bytes || bytes.length !== DESCRIPTOR_SIZE) {
@@ -22,6 +29,9 @@ class Descriptor {
     this.bytes = Uint8Array.from(bytes);
     if (!isValidWalletType(this.bytes[0])) {
       throw new Error('Invalid wallet type in descriptor');
+    }
+    if (this.bytes[1] !== 0 || this.bytes[2] !== 0) {
+      throw new Error('Descriptor metadata bytes are reserved and must be zero');
     }
   }
 
@@ -53,8 +63,10 @@ class Descriptor {
 /**
  * Build descriptor bytes from parts.
  * @param {number} walletType byte.
- * @param {[number, number]} [metadata=[0,0]] Two metadata bytes.
+ * @param {[number, number]} [metadata=[0,0]] Two metadata bytes — reserved,
+ *   must both be zero (the parameter is kept for API compatibility).
  * @returns {Uint8Array} 3 bytes.
+ * @throws {Error} If the wallet type is invalid or metadata is non-zero.
  */
 function getDescriptorBytes(walletType, metadata = [0, 0]) {
   if (!isValidWalletType(walletType)) {
@@ -62,13 +74,13 @@ function getDescriptorBytes(walletType, metadata = [0, 0]) {
   }
   const m0 = metadata?.[0] ?? 0;
   const m1 = metadata?.[1] ?? 0;
-  if (!Number.isInteger(m0) || m0 < 0 || m0 > 255 || !Number.isInteger(m1) || m1 < 0 || m1 > 255) {
-    throw new Error('Descriptor metadata bytes must be in range [0, 255]');
+  if (m0 !== 0 || m1 !== 0) {
+    throw new Error('Descriptor metadata bytes are reserved and must be zero');
   }
   const out = new Uint8Array(DESCRIPTOR_SIZE);
   out[0] = walletType >>> 0;
-  out[1] = m0;
-  out[2] = m1;
+  out[1] = 0;
+  out[2] = 0;
   return out;
 }
 

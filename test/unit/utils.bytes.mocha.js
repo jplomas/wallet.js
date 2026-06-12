@@ -69,6 +69,28 @@ describe('utils/bytes', () => {
       expect(got).to.deep.equal(Uint8Array.from(arr));
     });
 
+    it('rejects out-of-range or non-integer array elements instead of coercing (X-4)', () => {
+      // Uint8Array.from would silently wrap these (256→0, -1→255, 1.5→1,
+      // NaN→0), corrupting key/descriptor material undetected.
+      expect(() => toFixedU8([0, 256, 2], 3, 'seed')).to.throw(
+        'seed: array element at index 1 must be an integer in [0, 255], got 256'
+      );
+      expect(() => toFixedU8([-1, 0, 0], 3)).to.throw(
+        'bytes: array element at index 0 must be an integer in [0, 255], got -1'
+      );
+      expect(() => toFixedU8([0, 0, 1.5], 3)).to.throw(
+        'bytes: array element at index 2 must be an integer in [0, 255], got 1.5'
+      );
+      expect(() => toFixedU8([0, NaN, 0], 3)).to.throw(
+        'bytes: array element at index 1 must be an integer in [0, 255], got NaN'
+      );
+      expect(() => toFixedU8([0, '1', 0], 3)).to.throw(
+        'bytes: array element at index 1 must be an integer in [0, 255], got 1'
+      );
+      // Boundary values stay accepted.
+      expect(toFixedU8([0, 255, 128], 3)).to.deep.equal(Uint8Array.from([0, 255, 128]));
+    });
+
     it('throws when the byte length mismatches', () => {
       expect(() => toFixedU8('0xaaaa', 1, 'seed')).to.throw('seed: expected 1 bytes, got 2');
     });

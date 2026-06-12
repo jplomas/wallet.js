@@ -32,13 +32,23 @@ describe('wallet/common/context', () => {
     ]);
   });
 
-  it('every descriptor byte produces a distinct context', () => {
-    const base = signingContext(new Descriptor(Uint8Array.from([WalletType.ML_DSA_87, 0, 0])));
-    const byte1 = signingContext(new Descriptor(Uint8Array.from([WalletType.ML_DSA_87, 0x01, 0])));
-    const byte2 = signingContext(new Descriptor(Uint8Array.from([WalletType.ML_DSA_87, 0, 0x01])));
-    expect(Array.from(base)).to.not.deep.equal(Array.from(byte1));
-    expect(Array.from(base)).to.not.deep.equal(Array.from(byte2));
-    expect(Array.from(byte1)).to.not.deep.equal(Array.from(byte2));
+  it('exactly one context is constructible — sibling contexts cannot exist via the public API', () => {
+    // All three descriptor bytes are embedded in the context (locked by the
+    // canonical-layout test above), and since metadata bytes are
+    // reserved-zero (TOB-QRLLIB-3) with ML_DSA_87 the only valid type,
+    // every constructible Descriptor yields the identical 8-byte context.
+    const viaBytes = signingContext(new Descriptor(Uint8Array.from([WalletType.ML_DSA_87, 0, 0])));
+    const viaHex = signingContext(Descriptor.from('0x010000'));
+    expect(Array.from(viaBytes)).to.deep.equal(Array.from(viaHex));
+
+    // Descriptors that would produce a different context are rejected at
+    // construction, so a divergent context is unrepresentable upstream.
+    expect(() => new Descriptor(Uint8Array.from([WalletType.ML_DSA_87, 0x01, 0]))).to.throw(
+      'Descriptor metadata bytes are reserved and must be zero'
+    );
+    expect(() => new Descriptor(Uint8Array.from([WalletType.ML_DSA_87, 0, 0x01]))).to.throw(
+      'Descriptor metadata bytes are reserved and must be zero'
+    );
   });
 
   it('rejects non-Descriptor arguments', () => {

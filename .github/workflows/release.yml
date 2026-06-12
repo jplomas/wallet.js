@@ -125,7 +125,7 @@ jobs:
           git config --global url."git@github.com:".insteadOf "https://github.com/"
           git remote set-url origin "git@github.com:${GITHUB_REPOSITORY}.git"
 
-      - name: Semantic Release (version & changelog)
+      - name: Semantic Release (version, changelog, npm publish, GitHub release)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GIT_AUTHOR_NAME: github-actions[bot]
@@ -133,6 +133,20 @@ jobs:
           GIT_COMMITTER_NAME: github-actions[bot]
           GIT_COMMITTER_EMAIL: github-actions[bot]@users.noreply.github.com
           REPO: ${{ github.repository }}
+          # npm publish now runs INSIDE semantic-release's publish phase
+          # (@semantic-release/exec publishCmd → scripts/release-publish.sh),
+          # which executes BEFORE @semantic-release/github creates the GitHub
+          # release. A publish failure therefore aborts the release before a
+          # GitHub release exists — a GitHub release is now a reliable signal
+          # that the version is live on npm. (v6.2.0 was orphaned by the old
+          # ordering: tagged + GitHub-released, never published.)
+          #
+          # No NPM_TOKEN / NODE_AUTH_TOKEN — npm picks up the GitHub Actions
+          # OIDC token (`id-token: write` permission above) and exchanges it
+          # with the npm registry, provided this workflow is configured as a
+          # trusted publisher on the @theqrl/wallet.js package.
+          NPM_CONFIG_PROVENANCE: 'true'
+          NPM_CONFIG_ACCESS: public
         # --no-install: run the lockfile-pinned semantic-release from
         # devDependencies — never fetch the release toolchain from the
         # registry at release time.
@@ -153,37 +167,30 @@ jobs:
             echo "version=$OLD_VERSION" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Publish to npm with provenance (trusted publishing)
+      - name: Verify release is live on npm
         if: steps.check-release.outputs.released == 'true'
         env:
           VERSION: ${{ steps.check-release.outputs.version }}
-          NPM_CONFIG_PROVENANCE: 'true'
-          NPM_CONFIG_ACCESS: public
-        # No NPM_TOKEN / NODE_AUTH_TOKEN — npm picks up the GitHub Actions
-        # OIDC token (`id-token: write` permission above) and exchanges it
-        # with the npm registry, provided this workflow is configured as a
-        # trusted publisher on the @theqrl/wallet.js package (npm.com →
-        # package settings → trusted publishers).
-        #
-        # The npm registry occasionally returns 404 on the publish PUT
-        # response even though the package write succeeded server-side
-        # (CDN/replication false negative). On non-zero exit, verify
-        # whether the version landed before failing the job.
+        # Belt-and-braces after the in-lifecycle publish: confirm the
+        # registry actually serves the version before downstream jobs
+        # attach supply-chain artifacts. Recovery runbook: RELEASE.md
+        # "Recovering an orphaned release".
         run: |
-          set +e
-          npm publish
-          code=$?
-          set -e
-          if [ "$code" -ne 0 ]; then
-            echo "publish exited $code — checking whether @theqrl/wallet.js@$VERSION actually landed"
-            sleep 15
-            published=$(npm view "@theqrl/wallet.js@$VERSION" version 2>/dev/null || true)
-            if [ "$published" = "$VERSION" ]; then
-              echo "version $VERSION is on the registry — treating as success"
-              exit 0
+          set -euo pipefail
+          ok=""
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            served="$(npm view "@theqrl/wallet.js@${VERSION}" version 2>/dev/null || true)"
+            if [ "${served}" = "${VERSION}" ]; then
+              echo "confirmed @theqrl/wallet.js@${VERSION} on attempt ${attempt}"
+              ok=1
+              break
             fi
-            echo "version $VERSION is NOT on the registry — failing"
-            exit "$code"
+            echo "not yet visible (attempt ${attempt}/10); retrying in 15s"
+            sleep 15
+          done
+          if [ -z "${ok}" ]; then
+            echo "::error::@theqrl/wallet.js@${VERSION} is not served by the registry after 10 attempts. Follow RELEASE.md 'Recovering an orphaned release'."
+            exit 1
           fi
 
   # ===========================================================================

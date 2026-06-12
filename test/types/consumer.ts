@@ -45,10 +45,12 @@ const _wt: number = WalletType.ML_DSA_87;
 // --- Wallet creation surface ---
 
 const wallet = MLDSA87.newWallet();
-const walletWithMeta = MLDSA87.newWallet([0x01, 0x02]);
+// Metadata bytes are reserved and must be zero at runtime; the parameter
+// remains typed for API compatibility.
+const walletWithMeta = MLDSA87.newWallet([0x00, 0x00]);
 const seed = Seed.from('0x' + '00'.repeat(SEED_SIZE));
 const walletFromSeed = MLDSA87.newWalletFromSeed(seed);
-const walletFromSeedWithMeta = MLDSA87.newWalletFromSeed(seed, [0x01, 0x02]);
+const walletFromSeedWithMeta = MLDSA87.newWalletFromSeed(seed, [0x00, 0x00]);
 const walletFromMnemonic = MLDSA87.newWalletFromMnemonic(wallet.getMnemonic());
 const walletFromExt = newWalletFromExtendedSeed(wallet.getHexExtendedSeed());
 

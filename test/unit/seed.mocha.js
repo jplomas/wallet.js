@@ -85,6 +85,21 @@ describe('wallet/common/seed', () => {
       );
     });
 
+    it('rejects non-zero reserved descriptor metadata (TOB-QRLLIB-3, go-qrllib parity)', () => {
+      // An extended seed imported from a tool that wrote non-zero metadata
+      // would derive an address invalid to go-qrllib/rust-qrllib nodes —
+      // reject it at the boundary instead of building an unspendable wallet.
+      const bytes = new Uint8Array(EXTENDED_SEED_SIZE);
+      bytes[0] = WalletType.ML_DSA_87;
+      bytes[1] = 0x01;
+      expect(() => new ExtendedSeed(bytes)).to.throw('Descriptor metadata bytes are reserved and must be zero');
+      bytes[1] = 0;
+      bytes[2] = 0xff;
+      expect(() => new ExtendedSeed(bytes)).to.throw('Descriptor metadata bytes are reserved and must be zero');
+      bytes[2] = 0;
+      expect(() => new ExtendedSeed(bytes)).to.not.throw();
+    });
+
     it('throws on invalid sizes', () => {
       expect(() => new ExtendedSeed(Uint8Array.from([1]))).to.throw(`ExtendedSeed must be ${EXTENDED_SEED_SIZE} bytes`);
       expect(() => ExtendedSeed.from('0xdead')).to.throw(`ExtendedSeed: expected ${EXTENDED_SEED_SIZE} bytes, got 2`);

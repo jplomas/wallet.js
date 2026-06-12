@@ -25,7 +25,8 @@ function buildSeed() {
 function buildExtendedSeed() {
   const bytes = new Uint8Array(EXTENDED_SEED_SIZE);
   bytes[0] = 0x01; // ML_DSA_87 wallet type
-  for (let i = 1; i < EXTENDED_SEED_SIZE; i += 1) bytes[i] = (i * 13 + 5) & 0xff;
+  // bytes 1-2 stay zero: descriptor metadata is reserved-zero (TOB-QRLLIB-3)
+  for (let i = 3; i < EXTENDED_SEED_SIZE; i += 1) bytes[i] = (i * 13 + 5) & 0xff;
   return new ExtendedSeed(bytes);
 }
 

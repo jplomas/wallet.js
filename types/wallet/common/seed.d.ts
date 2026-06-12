@@ -49,7 +49,9 @@ export class ExtendedSeed {
     /**
      * Layout: [3 bytes descriptor] || [48 bytes seed].
      * @param {Uint8Array} bytes Exactly 51 bytes.
-     * @throws {Error} If size mismatch or invalid wallet type.
+     * @throws {Error} If size mismatch, invalid wallet type, or non-zero
+     *   reserved descriptor metadata bytes (1–2) — matching go-qrllib
+     *   descriptor validation.
      */
     constructor(bytes: Uint8Array);
     /** @private @type {Uint8Array} */

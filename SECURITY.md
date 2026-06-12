@@ -298,7 +298,7 @@ Use `signDeterministic` only when determinism is a security or protocol requirem
 
 ---
 
-## Descriptor Binding (TOB-QRLLIB-3)
+## Descriptor Binding
 
 Every wallet signature is bound to its descriptor via a domain-separated 8-byte signing context:
 
@@ -308,7 +308,45 @@ ctx = "ZOND" || SIGNING_CONTEXT_VERSION || descriptor   (4 + 1 + 3 = 8 bytes)
 
 The wallet passes this `ctx` as the FIPS 204 ML-DSA-87 context parameter on both signing and verification. A signature produced under descriptor `D1` will **not** verify under any descriptor `D2 ≠ D1`, even if the public key and message bytes match — the cryptographic binding is structural. The `metamorphic: descriptor-binding` test suite (`test/unit/metamorphic.mocha.js`) covers this property.
 
+Two complementary protections keep one keypair bound to exactly one
+on-chain identity:
+
+1. **Binding** — the context construction above: signatures cannot be
+   replayed under a different descriptor.
+2. **Canonicality** — the two descriptor metadata bytes (bytes 1–2) are
+   **reserved and must be zero**. Every construction path (`Descriptor`,
+   `Descriptor.from`, `getDescriptorBytes`, `newMLDSA87Descriptor`,
+   `ExtendedSeed`, and the wallet factories' `metadata` parameters)
+   rejects non-zero metadata, matching go-qrllib's `Descriptor.IsValid`.
+   Without this, one keypair could enroll under many sibling addresses,
+   and a non-zero-metadata wallet would be invalid to go-qrllib /
+   rust-qrllib nodes — i.e. potentially unspendable. The `metadata`
+   parameters remain in the API for compatibility but accept only
+   `[0, 0]`.
+
 Bumping `SIGNING_CONTEXT_VERSION` is a hard break of the signature wire format and must coincide with a coordinated consensus / library activation.
+
+---
+
+## Input-Parsing Supersets vs go-qrllib
+
+The address and mnemonic **parsers** accept a small, deliberate superset of
+go-qrllib's accepted inputs — normalization only:
+
+- `stringToAddress` / `isValidAddress`: lowercase `q` prefix and
+  surrounding whitespace are accepted (trimmed); all-lowercase and
+  all-uppercase hex are accepted unchanged; mixed-case hex must match the
+  EIP-55-style checksum exactly.
+- Mnemonics: case-insensitive words, flexible inter-word whitespace, and
+  surrounding whitespace are accepted and normalized.
+
+The **emitted** canonical forms — `Q` + lowercase hex (or checksummed)
+addresses, lowercase single-space mnemonics — match go-qrllib
+byte-for-byte, so everything this library produces is valid everywhere.
+The leniencies apply to what is accepted, never to what is emitted. This
+is intentional UX tolerance for hand-entered input; it is locked by
+`test/unit/parser-superset.mocha.js`, and any change to the accepted set
+must update that suite and this section together.
 
 ---
 

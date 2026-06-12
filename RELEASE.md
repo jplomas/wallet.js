@@ -57,3 +57,35 @@ BREAKING CHANGE: response now returns object instead of array
 - Include detailed explanations in commit bodies when needed
 - Reference relevant issues in footers (e.g., `Fixes #123`)
 - Use consistent scope labels like `(crypto)`, `(wallet)`, `(api)` for organization
+
+## Publish ordering & failure semantics
+
+`npm publish` runs **inside** semantic-release's publish phase
+(`@semantic-release/exec` `publishCmd` → `scripts/release-publish.sh`),
+which executes before `@semantic-release/github` creates the GitHub
+release. Consequences:
+
+- A GitHub release existing for a version means that version **is** on npm.
+- If npm publish fails, semantic-release aborts: no GitHub release is
+  created. The **git tag is still pushed** (semantic-release core tags
+  before the publish phase), and semantic-release will not retry a version
+  whose tag exists.
+
+## Recovering an orphaned release
+
+State: tag `vX.Y.Z` exists, npm does not serve `X.Y.Z` (the release job
+failed at or after publish). Historical example: v6.2.0 was tagged and
+GitHub-released but never reached npm under the old step ordering; it was
+superseded by v6.2.1 rather than recovered.
+
+Preferred recovery — **supersede, don't backfill**: land a trivial `fix:`
+commit and let the pipeline cut the next patch version end-to-end. The
+orphaned version number stays burned (semver ranges skip the gap
+harmlessly). Never move or delete the existing tag.
+
+Manual backfill (only if the exact version must exist, and you hold
+publish rights on `@theqrl`): check out the tag, `npm ci && npm run build`,
+verify `git status` is clean (committed `dist/` must match), then
+`npm publish --access public`. A manual publish lacks the workflow's
+provenance attestation — note that in the GitHub release. Verify with
+`npm view @theqrl/wallet.js@X.Y.Z version`.
