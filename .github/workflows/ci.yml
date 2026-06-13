@@ -1,7 +1,7 @@
 name: CI
 
-# Standalone test matrix — runs lint, tests (Node 20.x + 22.x), dist-check,
-# and browser tests on every push and pull_request to main.
+# Standalone test matrix — runs lint, tests (Node 20.x/22.x/24.x),
+# dist-check, and browser tests on every push and pull_request to main.
 on:
   push:
     branches: [main]

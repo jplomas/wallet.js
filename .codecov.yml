@@ -1,13 +1,15 @@
 coverage:
   status:
+    # Post-100%-milestone ratchet (CONTRIBUTING.md "Tests must keep coverage
+    # at 100%"): the c8 check-coverage gate in CI is the source of truth and
+    # this mirrors it. Lowering either is a maintainer decision made as an
+    # explicit, reviewed change to the thresholds — never badge drift.
     project:
       default:
-        target: auto
-        threshold: 1%
+        target: 100%
     patch:
       default:
-        target: auto
-        threshold: 1%
+        target: 100%
 
 ignore:
   - "scripts/**/*"
@@ -15,13 +17,37 @@ ignore:
   - "test/**/*"
   - "browser-tests/**/*"
 
+# Per-module drift visibility (one component per src/ module). The gate is
+# the project/patch 100% above plus c8 in CI; component statuses stay on
+# `auto` so they report movement without adding hard checks of their own.
 component_management:
   default_rules:
     statuses:
       - type: project
         target: auto
   individual_components:
-    - component_id: wallet
-      name: wallet
+    - component_id: wallet-ml-dsa-87
+      name: wallet-ml-dsa-87
       paths:
-        - src/**/*
+        - src/wallet/ml_dsa_87/**
+    - component_id: wallet-common
+      name: wallet-common
+      paths:
+        - src/wallet/common/**
+    - component_id: wallet-misc-factory
+      name: wallet-misc-factory
+      paths:
+        - src/wallet/misc/**
+        - src/wallet/factory.js
+    - component_id: utils
+      name: utils
+      paths:
+        - src/utils/**
+    - component_id: qrl-wordlist
+      name: qrl-wordlist
+      paths:
+        - src/qrl/**
+    - component_id: public-api
+      name: public-api
+      paths:
+        - src/index.js

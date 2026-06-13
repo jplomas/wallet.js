@@ -71,6 +71,17 @@ release. Consequences:
   before the publish phase), and semantic-release will not retry a version
   whose tag exists.
 
+The publish is **tarball-based**: `release-publish.sh` builds, packs the
+package once into `.release/tarballs/`, runs entrypoint/forbidden-path
+tripwires on the archive, and publishes that exact file. The workflow then
+uploads the same file as the `npm-tarball` artifact; the SBOM, checksum,
+attestation, and SLSA-provenance jobs all derive their outputs from it (no
+checkout, no rebuild), so the supply-chain documents describe the published
+bytes by construction. A post-publish gate additionally asserts the
+registry's advertised integrity (`npm view … dist.integrity`) equals the
+sha-512 of the handed-off tarball, and the release job only starts after an
+ancestry assertion against the commit the preflight job validated.
+
 ## Recovering an orphaned release
 
 State: tag `vX.Y.Z` exists, npm does not serve `X.Y.Z` (the release job

@@ -10,9 +10,13 @@ on:
 # Default-deny: each job opts in explicitly via its own `permissions:` block.
 permissions: {}
 
+# Queue release runs, never cancel them: a cancellation landing between
+# semantic-release's tag push and the npm publish manufactures an orphaned
+# release (tag exists, npm never serves the version). Back-to-back merges
+# wait their turn instead — proven near-miss on qrypto.js, 2026-06-12.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   # Defence-in-depth: re-runs lint + tests + build + dist-clean on the
@@ -23,12 +27,21 @@ jobs:
     if: github.repository == 'theQRL/wallet.js'
     permissions:
       contents: read
+    outputs:
+      # The exact commit this job validated. The release job asserts it is
+      # an ancestor of whatever it releases — main can advance between
+      # queued jobs, and serializing releases widens that window.
+      sha: ${{ steps.resolve-sha.outputs.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: main
           persist-credentials: false
+
+      - name: Resolve validated commit
+        id: resolve-sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -73,9 +86,21 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Assert preflight ancestry
+        env:
+          PREFLIGHT_SHA: ${{ needs.preflight.outputs.sha }}
+        # This job must stay on writable HEAD (semantic-release pushes a
+        # release commit), so a hard pin to the preflight commit is not
+        # possible. The ancestry assertion is the alternative: whatever is
+        # released must contain the commit preflight validated.
+        run: |
+          echo "preflight validated: ${PREFLIGHT_SHA}"
+          echo "releasing HEAD:      $(git rev-parse HEAD)"
+          git merge-base --is-ancestor "$PREFLIGHT_SHA" HEAD
+
       - name: Setup Node.js
         # Pinned to 22.14.0 to match the bundled npm version that can cleanly
-        # self-update to npm@^11.5.1 in the next step. Newer Node 22.x patches
+        # self-update to npm 11 in the next step. Newer Node 22.x patches
         # ship an npm where the global self-install corrupts its own
         # node_modules (missing promise-retry). semantic-release@25 also
         # requires node ^22.14.0 || >=24.10.0, which this pin satisfies.
@@ -89,8 +114,13 @@ jobs:
         # `id-token: write` is detected automatically by newer npm; no
         # NPM_TOKEN / NODE_AUTH_TOKEN is needed at all. The package's npm
         # registry settings must list this workflow as a trusted publisher.
+        #
+        # Exact-pinned: a ^range here resolves at run time inside the most
+        # privileged job in the repo. 11.16.0 matches the npm version pinned
+        # by package.json `overrides` / the lockfile — bump them together
+        # (CONTRIBUTING.md "Pinned verification inputs").
         run: |
-          npm install -g npm@^11.5.1
+          npm install -g npm@11.16.0
           npm --version
 
       - name: Install dependencies
@@ -117,9 +147,19 @@ jobs:
       - name: Configure Git for SSH
         env:
           REPO: ${{ github.repository }}
+        # known_hosts carries GitHub's published host keys (api.github.com/meta;
+        # docs: "GitHub's SSH key fingerprints"), not run-time `ssh-keyscan`
+        # trust-on-first-use: the tag push rides this channel with a
+        # branch-protection-bypass deploy key, so the endpoint must be
+        # authenticated, not discovered. Treat the keys as a pin — refresh
+        # against the meta API when GitHub rotates.
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          {
+            printf '%s\n' 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
+            printf '%s\n' 'github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg='
+            printf '%s\n' 'github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk='
+          } >> ~/.ssh/known_hosts
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global url."git@github.com:".insteadOf "https://github.com/"
@@ -167,6 +207,19 @@ jobs:
             echo "version=$OLD_VERSION" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Upload published tarball (artifact handoff)
+        if: steps.check-release.outputs.released == 'true'
+        # scripts/release-publish.sh packs the tarball and publishes that
+        # exact file. The SBOM/attestation/SLSA jobs below consume THIS
+        # artifact — supply-chain documents describe the published bytes,
+        # never a rebuild of a floating ref.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: npm-tarball
+          path: .release/tarballs/*.tgz
+          retention-days: 5
+          if-no-files-found: error
+
       - name: Verify release is live on npm
         if: steps.check-release.outputs.released == 'true'
         env:
@@ -193,6 +246,32 @@ jobs:
             exit 1
           fi
 
+      - name: Verify registry serves the handed-off bytes
+        if: steps.check-release.outputs.released == 'true'
+        env:
+          VERSION: ${{ steps.check-release.outputs.version }}
+        # Belt-and-braces on top of publishing the packed tarball itself:
+        # the registry's advertised integrity must equal the sha-512 of the
+        # tarball handed to the attestation jobs. Any divergence kills the
+        # run before supply-chain artifacts describe the wrong bytes.
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          set -- .release/tarballs/*.tgz
+          if [ "$#" -ne 1 ]; then
+            echo "::error::expected exactly one packed tarball, found $#"
+            exit 1
+          fi
+          tarball="$1"
+          local_integrity="sha512-$(openssl dgst -sha512 -binary "${tarball}" | base64 -w0)"
+          served_integrity="$(npm view "@theqrl/wallet.js@${VERSION}" dist.integrity)"
+          echo "local:  ${local_integrity}"
+          echo "served: ${served_integrity}"
+          if [ "${local_integrity}" != "${served_integrity}" ]; then
+            echo "::error::registry bytes do not match the published tarball handoff"
+            exit 1
+          fi
+
   # ===========================================================================
   # Supply Chain: SBOM, Checksums, GitHub Attestations
   # ===========================================================================
@@ -206,67 +285,69 @@ jobs:
       id-token: write # mint OIDC token for build provenance signing
       attestations: write # create build-provenance attestations
     steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      # No checkout: every artifact below is derived from the published
+      # tarball handed off by the release job. A workspace checkout of
+      # `main` can advance past the released commit between jobs, and a
+      # signed SBOM of "whatever main was at publish time" can mis-describe
+      # the released bytes — weakening exactly the story it exists to tell.
+      - name: Download published tarball
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          fetch-depth: 0
-          ref: main
-          persist-credentials: false
+          name: npm-tarball
+          path: tarball
 
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: '22.x'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Generate checksums
+      - name: Extract tarball contents
         run: |
-          mkdir -p dist
-          sha256sum package.json package-lock.json > dist/checksums-sha256.txt
-          sha512sum package.json package-lock.json > dist/checksums-sha512.txt
-          find src -name "*.js" -type f | sort | xargs sha256sum >> dist/source-checksums-sha256.txt
+          set -euo pipefail
+          mkdir -p extracted
+          tar -xzf tarball/*.tgz -C extracted
+          ls -la extracted/package
+
+      - name: Generate checksums (published artifact)
+        run: |
+          set -euo pipefail
+          (cd tarball && sha256sum ./*.tgz) > checksums-sha256.txt
+          (cd tarball && sha512sum ./*.tgz) > checksums-sha512.txt
+          (cd extracted/package && find . -type f | LC_ALL=C sort | xargs sha256sum) > package-contents-sha256.txt
 
       - name: Generate SBOM (SPDX)
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
+          path: extracted/package
           format: spdx-json
-          output-file: dist/sbom-spdx.json
+          output-file: sbom-spdx.json
           artifact-name: sbom-spdx.json
 
       - name: Generate SBOM (CycloneDX)
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
+          path: extracted/package
           format: cyclonedx-json
-          output-file: dist/sbom-cyclonedx.json
+          output-file: sbom-cyclonedx.json
           artifact-name: sbom-cyclonedx.json
 
-      - name: Attest checksums
+      - name: Attest published tarball and checksums
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: |
-            dist/checksums-sha256.txt
-            dist/checksums-sha512.txt
+            tarball/*.tgz
+            checksums-sha256.txt
+            checksums-sha512.txt
+            package-contents-sha256.txt
 
+      # attest-sbom subjects are the artifact each SBOM describes — the
+      # published tarball — not the SBOM document itself.
       - name: Attest SBOM (SPDX)
         uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
-          subject-path: dist/sbom-spdx.json
-          sbom-path: dist/sbom-spdx.json
+          subject-path: tarball/*.tgz
+          sbom-path: sbom-spdx.json
 
       - name: Attest SBOM (CycloneDX)
         uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
-          subject-path: dist/sbom-cyclonedx.json
-          sbom-path: dist/sbom-cyclonedx.json
-
-      - name: Attest package files
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
-        with:
-          subject-path: |
-            package.json
-            package-lock.json
+          subject-path: tarball/*.tgz
+          sbom-path: sbom-cyclonedx.json
 
       - name: Upload release artifacts
         env:
@@ -274,10 +355,12 @@ jobs:
           RELEASE_VERSION: ${{ needs.release.outputs.version }}
         run: |
           gh release upload "v${RELEASE_VERSION}" \
-            dist/checksums-sha256.txt \
-            dist/checksums-sha512.txt \
-            dist/sbom-spdx.json \
-            dist/sbom-cyclonedx.json \
+            checksums-sha256.txt \
+            checksums-sha512.txt \
+            package-contents-sha256.txt \
+            sbom-spdx.json \
+            sbom-cyclonedx.json \
+            --repo "${GITHUB_REPOSITORY}" \
             --clobber
 
   # ===========================================================================
@@ -289,48 +372,26 @@ jobs:
     needs: release
     if: needs.release.outputs.released == 'true'
     permissions:
-      contents: read        # checkout only; this job uploads via artifact (not gh release)
+      contents: read # artifact download only; nothing is checked out
     outputs:
       hashes: ${{ steps.hash.outputs.hashes }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      # The provenance subject is the published tarball from the release
+      # job's handoff. A rebuild here (checkout of floating `main` +
+      # `npm pack`) could hash different bytes than npm serves — the
+      # provenance must describe the released artifact, not a reproduction.
+      - name: Download published tarball
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          ref: main
-          persist-credentials: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: '22.x'
-
-      - name: Install dependencies
-        # Locked install — SLSA subjects must be produced from the same
-        # dependency tree the rest of the pipeline tested.
-        run: npm ci
-
-      - name: Build
-        run: npm run build
-
-      - name: Pack npm tarball
-        run: |
-          mkdir -p dist/tarballs
-          npm pack --pack-destination dist/tarballs
-          ls -la dist/tarballs/
+          name: npm-tarball
+          path: tarball
 
       - name: Generate subject hashes
         id: hash
         run: |
           set -euo pipefail
-          cd dist/tarballs
+          cd tarball
           echo "hashes=$(sha256sum ./*.tgz | base64 -w0)" >> "$GITHUB_OUTPUT"
-
-      - name: Upload tarball
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: npm-tarball
-          path: dist/tarballs/*.tgz
-          retention-days: 5
 
   slsa-provenance:
     name: SLSA Provenance

@@ -35,3 +35,6 @@ yarn-error.log*
 # code coverage
 coverage.lcov
 /test-results
+
+# release tarball handoff scratch (packed + published by scripts/release-publish.sh)
+.release/
