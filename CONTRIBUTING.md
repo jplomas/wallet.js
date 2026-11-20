@@ -84,7 +84,7 @@ resolver. The full list, with bump semantics:
 |---|---|---|
 | go-qrllib `393467a…` (= v0.10.0) | `cross-verify.yml` env `GO_QRLLIB_PIN` | Routine: update SHA + dated comment, run the workflow via `workflow_dispatch` on the branch, merge. Never bump past a failure silently. |
 | Go module context of the cross-verify harness | structural | The harness Go programs run from *inside* the pinned go-qrllib clone, so `go run` resolves through the clone's own `go.mod`/`go.sum` at the pinned commit. There is deliberately **no `go.mod` under `.github/cross-verify/`** — a harness-local module file would resolve go-qrllib from the registry and silently shadow the clone pin. Adding one is a reviewed change to this table. |
-| `npm@11.16.0` | `release.yml` "Use npm 11" step; `package.json` `overrides` + lockfile | Exact-pinned in the publish-privileged job (a `^range` would resolve at run time). Bump the workflow and the override together. |
+| `npm@11.21.2` | `release.yml` "Use npm 11" step; `package.json` `overrides` + lockfile | Exact-pinned in the publish-privileged job (a `^range` would resolve at run time). Bump the workflow and the override together. |
 | actionlint `1.7.10` | `actionlint.yml` `version:` input | The engine inside the SHA-pinned action (defaults to `latest` otherwise). Keep in step with the brew-installed version used locally. |
 | zizmor engine `1.31.1` | `actionlint.yml` `version:` input | The action defaults to `latest`; pin the engine explicitly and run the pedantic audit when bumping. |
 | `codecov-action` `fb8b358… # v7.0.0` | `coverage.yml` | House pin, aligned across the QRL JS repos — bump in step. |
