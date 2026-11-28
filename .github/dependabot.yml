@@ -27,6 +27,28 @@ updates:
       # reworked to emit the same declarations under TS 7.
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
+      # semantic-release@26 (Nov 2026) is held back. It needs node >=26.13,
+      # which the release job now runs (26.13.1), but it is built on beta deps
+      # (@semantic-release/core 1.0.0-beta.x plus beta commit-analyzer /
+      # release-notes-generator / npm plugins) that change behaviour silently.
+      # CI never runs the release path on a PR, so a breaking bump looks green.
+      #
+      # To revisit (checked 2026-11-28 with a local dry run of 26.0.1 against a
+      # stand-in remote; GitHub plugin, SSH tag push and OIDC publish untested):
+      # - v26 bundles conventional-changelog-conventionalcommits@10, which
+      #   ignores `"hidden": true` in .releaserc.json presetConfig.types and
+      #   needs `"effect": "hidden"` -- otherwise Chores/CI sections leak into
+      #   the notes and CHANGELOG. Setting both keys works on v25 and v26.
+      # - Once on v26, the conventional-changelog-conventionalcommits ignore
+      #   above is likely moot (v26 ships writer@9 and its own preset copy).
+      # - v26 depends on npm 12 via @semantic-release/npm; the package.json
+      #   `overrides` pin holds it at npm 11.21.2 (that plugin isn't used --
+      #   publishing goes through scripts/release-publish.sh). Re-check when
+      #   the npm pin is bumped.
+      # Drop this ignore once those plugins are stable and the above is done,
+      # ideally merged alongside a release that is actively watched.
+      - dependency-name: "semantic-release"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "deps"
 

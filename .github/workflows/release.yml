@@ -99,14 +99,20 @@ jobs:
           git merge-base --is-ancestor "$PREFLIGHT_SHA" HEAD
 
       - name: Setup Node.js
-        # Pinned to 22.14.0 to match the bundled npm version that can cleanly
-        # self-update to npm 11 in the next step. Newer Node 22.x patches
-        # ship an npm where the global self-install corrupts its own
-        # node_modules (missing promise-retry). semantic-release@25 also
-        # requires node ^22.14.0 || >=24.10.0, which this pin satisfies.
+        # Exact-pinned to the current Node LTS (26.x "Lithium") so the most
+        # privileged job gets security releases rather than sitting on an old
+        # patch. The previous 22.14.0 pin worked around an npm self-install
+        # corruption (missing promise-retry) that no longer reproduces: the
+        # bundled npm 11.20.0 self-updates cleanly to the npm@11.21.2 pin in
+        # the next step (verified 2026-11-28 on ubuntu-24.04/amd64, along with
+        # npm ci, build, a semantic-release dry run and release-publish.sh).
+        # Satisfies semantic-release@25 (^22.14.0 || >=24.10.0) and
+        # @semantic-release/{changelog,git} (^22.22.2 || >=24.15).
+        # Build output is node-version independent (dist/ is byte-identical
+        # to the 22.x preflight build), so preflight can stay on 22.x.
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22.14.0
+          node-version: 26.13.1
           registry-url: 'https://registry.npmjs.org/'
 
       - name: Use npm 11 for trusted publishing
